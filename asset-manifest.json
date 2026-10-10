@@ -86,6 +86,11 @@
       "sha256": "5d1493a80b62c65b52a5066ab9cb999265dee922bc154cdf49d0834accfe8062"
     },
     {
+      "path": "godot/assets/polygon_mini_free.glb",
+      "bytes": 7620848,
+      "sha256": "f44f7babb62e36bd4cc1d8d53fb5a858ca2cad27424eb41c35e541b6a74c0be2"
+    },
+    {
       "path": "source/characters/cartoon_asian__boy.glb",
       "bytes": 39691332,
       "sha256": "9df0f4fc1923384464a32e38ec68008ffeb563119c040e05229b753a18dcd422"

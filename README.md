@@ -69,6 +69,7 @@ GODOT_BIN=/path/to/Godot ./run
 | `blender/characters/*.blend` | Пять персонажей с исходными скелетами |
 | `blender/characters/walking/*_walk.blend` | Четыре персонажа с перенесённой ходьбой, действие `Walk` |
 | `godot/assets/modern_city_enclosed.glb` | Готовая карта для движка |
+| `godot/assets/polygon_mini_free.glb` | Low-poly остров «POLYGON Mini [FREE]» (парящий, масштаб ×2) |
 | `godot/assets/characters/*_walk.glb` | Все пять персонажей с ходьбой, включая Jane |
 | `source/modern_city_block.glb` | Скачанный оригинал карты |
 | `source/characters/*.glb` | Скачанные оригиналы персонажей |
