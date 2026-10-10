@@ -19,6 +19,9 @@ var collider_count := 0
 var pedestrians: Node3D
 var npc_start := STREET_START
 var npc_yaw := 0.095
+var traffic: Node3D
+var cinematic := false
+var _cin_angle := 0.6
 
 func _ready() -> void:
 	_register_inputs()
@@ -29,6 +32,10 @@ func _ready() -> void:
 	var mini := get_node_or_null("MiniCity")
 	if mini:
 		_add_collisions(mini)
+		traffic = Node3D.new()
+		traffic.name = "Traffic"
+		traffic.set_script(preload("res://traffic.gd"))
+		add_child(traffic)
 	observer = CharacterBody3D.new()
 	observer.name = "Observer"
 	observer.collision_mask = 3
@@ -152,7 +159,7 @@ func _setup_hud() -> void:
 	stack.add_child(_label("МИНИ-ГОРОДОК  /  ОСМОТР", 20, Color("e4f1e9")))
 	stack.add_child(_label("WASD — движение  ·  Мышь — обзор", 16, Color("d2dddd")))
 	stack.add_child(_label("Space / Ctrl — вверх / вниз  ·  Shift — быстрее", 16, Color("d2dddd")))
-	stack.add_child(_label("Tab — сверху  ·  R — на улицу  ·  Esc — курсор", 16, Color("d2dddd")))
+	stack.add_child(_label("Tab — сверху  ·  R — на улицу  ·  C — кино-облёт  ·  Esc — курсор", 16, Color("d2dddd")))
 	if pedestrians:
 		stack.add_child(_label("N — к пешеходам  ·  Колесо — скорость  ·  F11 — экран", 16, Color("d2dddd")))
 	else:
@@ -196,6 +203,16 @@ func toggle_overview() -> void:
 		velocity = Vector3.ZERO
 		overview = true
 
+func toggle_cinematic() -> void:
+	if cinematic:
+		cinematic = false
+		camera.rotation = Vector3.ZERO
+		pitch = 0.0
+		yaw = observer.rotation.y
+	else:
+		cinematic = true
+		velocity = Vector3.ZERO
+
 func set_captured(captured: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if captured else Input.MOUSE_MODE_VISIBLE
 	movement_enabled = captured
@@ -227,12 +244,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R: reset_street()
 			KEY_N: if pedestrians: inspect_npc()
 			KEY_TAB: toggle_overview()
+			KEY_C: toggle_cinematic()
 			KEY_F11:
 				var fullscreen := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fullscreen else DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 func _physics_process(delta: float) -> void:
-	if movement_enabled:
+	if cinematic:
+		_cin_angle += delta * 0.05
+		var center := Vector3(0.0, 13.0, 39.0)
+		observer.position = center + Vector3(cos(_cin_angle) * 85.0, 42.0, sin(_cin_angle) * 85.0)
+		observer.look_at(center)
+	elif movement_enabled:
 		var planar := Input.get_vector("left", "right", "forward", "back")
 		var direction := Basis(Vector3.UP, yaw) * Vector3(planar.x, 0, planar.y)
 		direction.y = Input.get_axis("down", "up")
@@ -245,7 +268,9 @@ func _physics_process(delta: float) -> void:
 	elapsed += delta
 	if elapsed > 0.15:
 		elapsed = 0.0
-		status.text = "Высота %.1f м  ·  Скорость %.0f м/с  ·  Пешеходы: %d" % [camera.global_position.y, speed, pedestrians.walkers.size() if pedestrians else 0]
+		status.text = "Высота %.1f м  ·  Скорость %.0f м/с  ·  Машин: %d" % [camera.global_position.y, speed, traffic.car_count if traffic else 0]
+	if cinematic:
+		status.text += "  ·  КИНО-ОБЛЁТ (C — выйти)"
 
 func _smoke_check() -> void:
 	await get_tree().physics_frame
@@ -300,6 +325,19 @@ func _smoke_check() -> void:
 	set_captured(true)
 	reset_street()
 	assert(observer.position == npc_start, "Reset failed")
+	# Traffic: run a deterministic simulation and sanity-check the fleet.
+	if traffic:
+		traffic.set_process(false)
+		traffic.simulate(30.0)
+		for car in traffic._cars:
+			var cpos: Vector3 = car["node"].position
+			assert(cpos.is_finite(), "Car position is NaN")
+			assert(cpos.y > 10.0 and cpos.y < 45.0, "Car left the deck")
+		assert(traffic.car_count >= 8, "Not enough cars spawned")
+		assert(traffic.light_count >= 4, "Not enough traffic lights")
+		assert(traffic.travel_total > 30.0, "Cars did not drive")
+		assert(traffic.state_changes >= 6, "Traffic lights never changed state")
+		print("TRAFFIC_OK | cars: ", traffic.car_count, " / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / light changes: ", traffic.state_changes)
 	await get_tree().create_timer(1.0).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(ProjectSettings.globalize_path("res://").path_join("../previews/enclosed_street.png"))
