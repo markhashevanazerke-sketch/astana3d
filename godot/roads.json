@@ -1,14 +1,14 @@
 {
   "car": {
-    "width": 1.3,
-    "length": 2.8,
+    "width": 1.0,
+    "length": 2.5,
     "height": 1.05,
-    "cruise_min": 3.2,
-    "cruise_max": 5.0,
-    "accel": 3.0,
-    "decel": 4.5,
-    "follow_gap": 6.0,
-    "follow_range": 14.0
+    "cruise_min": 2.4,
+    "cruise_max": 4.2,
+    "accel": 2.5,
+    "decel": 4.0,
+    "follow_gap": 7.0,
+    "follow_range": 16.0
   },
   "routes": {
     "south": {
@@ -21,8 +21,8 @@
         [11,71],[11,70],[11,69],[11,68],[11,67],[10,67],[9,67],[8,67]
       ],
       "closed": true,
-      "cars": 4,
-      "cruise": [3.6, 4.4, 4.9, 3.9]
+      "cars": 5,
+      "cruise": [3.2, 3.8, 4.2, 3.4, 3.0]
     },
     "central": {
       "points": [
@@ -31,8 +31,8 @@
         [10,53],[9,52],[8,53],[7,52]
       ],
       "closed": true,
-      "cars": 2,
-      "cruise": [3.2, 3.8]
+      "cars": 3,
+      "cruise": [2.8, 3.4, 3.0]
     },
     "north": {
       "points": [
@@ -41,8 +41,8 @@
         [39,11],[39,10]
       ],
       "closed": true,
-      "cars": 2,
-      "cruise": [2.8, 3.4]
+      "cars": 3,
+      "cruise": [2.4, 3.0, 2.7]
     }
   },
   "lights": [

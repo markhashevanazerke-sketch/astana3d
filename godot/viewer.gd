@@ -20,6 +20,7 @@ var pedestrians: Node3D
 var npc_start := STREET_START
 var npc_yaw := 0.095
 var traffic: Node3D
+var island_life: Node3D
 var cinematic := false
 var _cin_angle := 0.6
 
@@ -36,6 +37,10 @@ func _ready() -> void:
 		traffic.name = "Traffic"
 		traffic.set_script(preload("res://traffic.gd"))
 		add_child(traffic)
+		island_life = Node3D.new()
+		island_life.name = "IslandLife"
+		island_life.set_script(preload("res://island_life.gd"))
+		add_child(island_life)
 	observer = CharacterBody3D.new()
 	observer.name = "Observer"
 	observer.collision_mask = 3
@@ -46,6 +51,8 @@ func _ready() -> void:
 	sphere.radius = 0.35
 	shape.shape = sphere
 	observer.add_child(shape)
+	if island_life:
+		island_life.observer = observer
 	camera = Camera3D.new()
 	camera.name = "FreeCamera"
 	camera.fov = 78.0
@@ -268,7 +275,7 @@ func _physics_process(delta: float) -> void:
 	elapsed += delta
 	if elapsed > 0.15:
 		elapsed = 0.0
-		status.text = "Высота %.1f м  ·  Скорость %.0f м/с  ·  Машин: %d" % [camera.global_position.y, speed, traffic.car_count if traffic else 0]
+		status.text = "Высота %.1f м  ·  Скорость %.0f м/с  ·  Машин: %d  ·  Людей: %d" % [camera.global_position.y, speed, traffic.car_count if traffic else 0, island_life.walker_count if island_life else 0]
 	if cinematic:
 		status.text += "  ·  КИНО-ОБЛЁТ (C — выйти)"
 
@@ -338,6 +345,19 @@ func _smoke_check() -> void:
 		assert(traffic.travel_total > 30.0, "Cars did not drive")
 		assert(traffic.state_changes >= 6, "Traffic lights never changed state")
 		print("TRAFFIC_OK | cars: ", traffic.car_count, " / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / light changes: ", traffic.state_changes)
+	# Living town: deterministic pedestrian + shop-visit simulation.
+	if island_life:
+		island_life.set_physics_process(false)
+		island_life.simulate(30.0)
+		for walker in island_life._walkers:
+			var wpos: Vector3 = walker["node"].global_position
+			assert(wpos.is_finite(), "Walker position is NaN")
+			assert(wpos.y > 10.0 and wpos.y < 30.0, "Walker left the plaza")
+		assert(island_life.walker_count >= 6, "Not enough pedestrians")
+		assert(island_life.shop_count >= 3, "Not enough shops")
+		assert(island_life.travel_total > 60.0, "Pedestrians did not walk")
+		assert(island_life.visit_count >= 1, "Shops were never visited")
+		print("ISLAND_LIFE_OK | walkers: ", island_life.walker_count, " / shops: ", island_life.shop_count, " / travel: ", int(island_life.travel_total), " m / visits: ", island_life.visit_count)
 	await get_tree().create_timer(1.0).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(ProjectSettings.globalize_path("res://").path_join("../previews/enclosed_street.png"))

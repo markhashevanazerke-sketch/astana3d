@@ -146,6 +146,7 @@ func _spawn_cars() -> void:
 				"speed": 0.0,
 				"cruise": spec["cruise"],
 				"uid": uid,
+				"wheels": spec["wheels"],
 			}
 			add_child(spec["node"])
 			_cars.append(car)
@@ -166,7 +167,7 @@ func _make_car(cruise: float) -> Dictionary:
 	body_mat.albedo_color = col
 	var body := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(float(_car_spec.get("width", 1.3)), 0.5, float(_car_spec.get("length", 2.8)))
+	bm.size = Vector3(float(_car_spec.get("width", 1.0)), 0.5, float(_car_spec.get("length", 2.5)))
 	body.mesh = bm
 	body.material_override = body_mat
 	body.position = Vector3(0, 0.5, 0)
@@ -176,15 +177,16 @@ func _make_car(cruise: float) -> Dictionary:
 	cabin_mat.roughness = 0.2
 	var cabin := MeshInstance3D.new()
 	var cm := BoxMesh.new()
-	cm.size = Vector3(float(_car_spec.get("width", 1.3)) * 0.92, 0.42, float(_car_spec.get("length", 2.8)) * 0.5)
+	cm.size = Vector3(float(_car_spec.get("width", 1.0)) * 0.92, 0.42, float(_car_spec.get("length", 2.5)) * 0.5)
 	cabin.mesh = cm
 	cabin.material_override = cabin_mat
 	cabin.position = Vector3(0, 0.92, 0.12)
 	root.add_child(cabin)
 	var wheel_mat := StandardMaterial3D.new()
 	wheel_mat.albedo_color = Color(0.08, 0.08, 0.09)
-	var wl := float(_car_spec.get("width", 1.3)) * 0.5
-	var ll := float(_car_spec.get("length", 2.8)) * 0.5
+	var wl := float(_car_spec.get("width", 1.0)) * 0.5
+	var ll := float(_car_spec.get("length", 2.5)) * 0.5
+	var wheels := []
 	for wx in [-1, 1]:
 		for wz in [-1, 1]:
 			var wheel := MeshInstance3D.new()
@@ -195,8 +197,9 @@ func _make_car(cruise: float) -> Dictionary:
 			wheel.mesh = wm
 			wheel.material_override = wheel_mat
 			wheel.rotation.z = PI / 2.0
-			wheel.position = Vector3(wx * (wl + 0.02), 0.26, wz * (ll - 0.55))
+			wheel.position = Vector3(wx * (wl + 0.02), 0.26, wz * (ll - 0.5))
 			root.add_child(wheel)
+			wheels.append(wheel)
 	var head_mat := StandardMaterial3D.new()
 	head_mat.albedo_color = Color(1, 0.98, 0.85)
 	head_mat.emission = Color(1, 0.95, 0.7)
@@ -220,16 +223,40 @@ func _make_car(cruise: float) -> Dictionary:
 		tail.material_override = tail_mat
 		tail.position = Vector3(hx * 0.38, 0.52, ll + 0.01)
 		root.add_child(tail)
-	return {"node": root, "cruise": cruise}
+	return {"node": root, "cruise": cruise, "wheels": wheels}
 
 
-func _place_car(car: Dictionary) -> void:
+func _place_car(car: Dictionary, dt: float = 0.0) -> void:
 	var route: Dictionary = _routes[car["route"]]
 	var sample := _sample(route, car["s"])
-	car["node"].position = sample["pos"]
-	var dir: Vector3 = sample["dir"]
-	if dir.length_squared() > 0.0001:
-		car["node"].look_at(car["node"].position + dir, Vector3.UP)
+	var node: Node3D = car["node"]
+	node.position = sample["pos"]
+	var dir: Vector3 = _heading(route, car["s"], float(car["speed"]))
+	if dir.length_squared() <= 0.0001:
+		return
+	if not car.get("oriented", false):
+		node.look_at(node.position + dir, Vector3.UP)
+		car["oriented"] = true
+	else:
+		var target := Basis.looking_at(dir, Vector3.UP)
+		# fast catch-up slerp: heading stays glued to the path, corners look soft
+		node.basis = node.basis.slerp(target, 1.0 - exp(-14.0 * maxf(dt, 0.016)))
+	# wheel spin
+	var spin: float = float(car["speed"]) / 0.26 * maxf(dt, 0.0)
+	if spin > 0.0:
+		for wheel in car.get("wheels", []):
+			wheel.rotate_object_local(Vector3.UP, spin)
+
+
+func _heading(route: Dictionary, s: float, speed: float) -> Vector3:
+	# Chord over a small arc ahead of the car: the heading changes gradually
+	# through corners (geometric lead, no temporal lag -> no extra clipping).
+	var a: Vector3 = _sample(route, s - 0.4)["pos"]
+	var b: Vector3 = _sample(route, s + 0.55 + 0.12 * speed)["pos"]
+	var dir := b - a
+	if dir.length_squared() < 0.0001:
+		return _sample(route, s)["dir"]
+	return dir.normalized()
 
 
 func _sample(route: Dictionary, s: float) -> Dictionary:
@@ -381,13 +408,17 @@ func _update_cars(dt: float) -> void:
 					var need: float = car["speed"] * car["speed"] / (2.0 * decel) + 0.6
 					if d > need:
 						target = minf(target, 0.0)
-		# car following
+		# car following: kinematic (can brake to a stop before the car ahead)
 		for other in _cars:
 			if other["uid"] == car["uid"] or other["route"] != car["route"]:
 				continue
 			var d: float = fposmod(float(other["s"]) - float(car["s"]), float(route["length"]))
 			if d > 0.01 and d < range_m:
-				var allowed: float = float(other["speed"]) * clampf((d - 1.6) / (gap - 1.6), 0.0, 1.0)
+				var allowed: float = sqrt(2.0 * decel * maxf(d - 1.6, 0.0))
+				if d < gap:
+					# platoon: match the leader, small allowance so a standing
+						# queue can start moving without a deadlock
+					allowed = minf(allowed, float(other["speed"]) + 0.4)
 				target = minf(target, allowed)
 		if car["speed"] < target:
 			car["speed"] = minf(target, car["speed"] + accel * dt)
@@ -395,7 +426,7 @@ func _update_cars(dt: float) -> void:
 			car["speed"] = maxf(target, car["speed"] - decel * dt)
 		car["s"] = fposmod(car["s"] + car["speed"] * dt, route["length"])
 		travel_total += car["speed"] * dt
-		_place_car(car)
+		_place_car(car, dt)
 		# stop event bookkeeping
 		var was: bool = _was_fast[car["uid"]]
 		var now_fast: bool = car["speed"] > 0.5
