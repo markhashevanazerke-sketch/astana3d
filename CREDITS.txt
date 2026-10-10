@@ -7,13 +7,16 @@ User supplied GLB on 2026-10-08; original retained in source/modern_city_block.g
 Working copy: centimetres converted to metres, centered; material swatch planes removed.
 Textures and authored materials preserved. Not an actual reconstruction of Almaty.
 
-FLOATING MINI ISLAND (2026-10-10)
+MAIN MINI-TOWN (updated 2026-10-10)
 POLYGON Mini [FREE] by Leafia dev. — free version of the Synty "POLYGON Mini" asset.
 https://sketchfab.com/3d-models/polygon-mini-free-87ad9a911fcb4c6d9f786319c66db26c
 License: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/
 Attribution: "POLYGON Mini [FREE]" by Leafia dev. (Leaf_dev) on Sketchfab.
 Original GLB unmodified: godot/assets/polygon_mini_free.glb.
-Placed in godot/main.tscn as the floating island "PolygonMiniIsland" (scale x2, position 0/85/350).
+Main map of godot/main.tscn (node "MiniCity", scale x3, centered on the origin).
+The previous city map (modern_city_enclosed) is not in the scene anymore; its files
+and NPC routes are kept in the repository, and pedestrians activate automatically
+when the CityBlock node is restored to the scene.
 
 PREVIOUS OSM BLOCKOUT (retained separately)
 

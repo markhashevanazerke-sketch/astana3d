@@ -1,6 +1,6 @@
 extends Node3D
 
-const STREET_START := Vector3(0.0, 1.8, 0.0)
+const STREET_START := Vector3(0.0, 25.0, 150.0)
 const MOUSE_SENSITIVITY := 0.002
 var camera: Camera3D
 var status: Label
@@ -11,6 +11,7 @@ var velocity := Vector3.ZERO
 var pitch: float = 0.0
 var yaw: float = 0.095
 var overview := false
+var movement_enabled := false
 var elapsed: float = 0.0
 var automated_check := "--smoke" in OS.get_cmdline_user_args() or "--npc-check" in OS.get_cmdline_user_args()
 var observer: CharacterBody3D
@@ -22,7 +23,12 @@ var npc_yaw := 0.095
 func _ready() -> void:
 	_register_inputs()
 	_setup_environment()
-	_add_collisions($CityBlock)
+	var city := get_node_or_null("CityBlock")
+	if city:
+		_add_collisions(city)
+	var mini := get_node_or_null("MiniCity")
+	if mini:
+		_add_collisions(mini)
 	observer = CharacterBody3D.new()
 	observer.name = "Observer"
 	observer.collision_mask = 3
@@ -40,16 +46,18 @@ func _ready() -> void:
 	camera.far = 5000.0
 	observer.add_child(camera)
 	camera.current = true
-	pedestrians = Node3D.new()
-	pedestrians.set_script(preload("res://pedestrians.gd"))
-	pedestrians.name = "Pedestrians"
-	add_child(pedestrians)
-	pedestrians.observer = observer
-	npc_start = pedestrians.camera_start
-	npc_yaw = pedestrians.camera_yaw
+	if city:
+		pedestrians = Node3D.new()
+		pedestrians.set_script(preload("res://pedestrians.gd"))
+		pedestrians.name = "Pedestrians"
+		add_child(pedestrians)
+		pedestrians.observer = observer
+		npc_start = pedestrians.camera_start
+		npc_yaw = pedestrians.camera_yaw
 	reset_street()
 	_setup_hud()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	movement_enabled = true
 	print("ALMATY_VIEWER_READY | map loaded | WASD / mouse / Space / Ctrl / Shift")
 	if "--smoke" in OS.get_cmdline_user_args():
 		_smoke_check.call_deferred()
@@ -141,11 +149,14 @@ func _setup_hud() -> void:
 	stack.add_theme_constant_override("separation", 6)
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(stack)
-	stack.add_child(_label("ЖИЛОЙ КВАРТАЛ  /  ОСМОТР", 20, Color("e4f1e9")))
+	stack.add_child(_label("МИНИ-ГОРОДОК  /  ОСМОТР", 20, Color("e4f1e9")))
 	stack.add_child(_label("WASD — движение  ·  Мышь — обзор", 16, Color("d2dddd")))
 	stack.add_child(_label("Space / Ctrl — вверх / вниз  ·  Shift — быстрее", 16, Color("d2dddd")))
 	stack.add_child(_label("Tab — сверху  ·  R — на улицу  ·  Esc — курсор", 16, Color("d2dddd")))
-	stack.add_child(_label("N — к пешеходам  ·  Колесо — скорость  ·  F11 — экран", 16, Color("d2dddd")))
+	if pedestrians:
+		stack.add_child(_label("N — к пешеходам  ·  Колесо — скорость  ·  F11 — экран", 16, Color("d2dddd")))
+	else:
+		stack.add_child(_label("Колесо — скорость  ·  F11 — экран", 16, Color("d2dddd")))
 	status = _label("", 15, Color("8dd1c1"))
 	stack.add_child(status)
 	crosshair = _label("·", 32, Color(1,1,1,0.7))
@@ -157,7 +168,7 @@ func _setup_hud() -> void:
 	pause_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	pause_hint.position = Vector2(-335, -95)
 	pause_hint.visible = false
-	var credit := _label("Modern City Block · akselmot · Free Standard  |  Основа будущего района Алматы", 14, Color("d2dddd"))
+	var credit := _label("POLYGON Mini [FREE] · Leafia dev. · CC BY 4.0  |  Парящий low-poly городок", 14, Color("d2dddd"))
 	root.add_child(credit)
 	credit.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	credit.position = Vector2(22, -31)
@@ -178,8 +189,8 @@ func toggle_overview() -> void:
 	if overview:
 		reset_street()
 	else:
-		observer.position = Vector3(370, 410, 450)
-		camera.look_at(Vector3(0, 0, 0))
+		observer.position = Vector3(95, 105, 140)
+		camera.look_at(Vector3(0, 13, 39))
 		pitch = camera.rotation.x
 		yaw = camera.rotation.y
 		velocity = Vector3.ZERO
@@ -187,6 +198,7 @@ func toggle_overview() -> void:
 
 func set_captured(captured: bool) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if captured else Input.MOUSE_MODE_VISIBLE
+	movement_enabled = captured
 	velocity = Vector3.ZERO
 	pause_hint.visible = not captured
 	crosshair.visible = captured
@@ -213,14 +225,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		match event.physical_keycode:
 			KEY_ESCAPE: set_captured(Input.mouse_mode != Input.MOUSE_MODE_CAPTURED)
 			KEY_R: reset_street()
-			KEY_N: inspect_npc()
+			KEY_N: if pedestrians: inspect_npc()
 			KEY_TAB: toggle_overview()
 			KEY_F11:
 				var fullscreen := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fullscreen else DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 func _physics_process(delta: float) -> void:
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if movement_enabled:
 		var planar := Input.get_vector("left", "right", "forward", "back")
 		var direction := Basis(Vector3.UP, yaw) * Vector3(planar.x, 0, planar.y)
 		direction.y = Input.get_axis("down", "up")
@@ -233,13 +245,14 @@ func _physics_process(delta: float) -> void:
 	elapsed += delta
 	if elapsed > 0.15:
 		elapsed = 0.0
-		status.text = "Высота %.1f м  ·  Скорость %.0f м/с  ·  Пешеходы: 24" % [camera.global_position.y, speed]
+		status.text = "Высота %.1f м  ·  Скорость %.0f м/с  ·  Пешеходы: %d" % [camera.global_position.y, speed, pedestrians.walkers.size() if pedestrians else 0]
 
 func _smoke_check() -> void:
 	await get_tree().physics_frame
-	assert(collider_count > 80, "Exterior collision shapes missing")
+	assert(collider_count > 3, "Collision shapes missing")
 	set_physics_process(false)
 	set_captured(true)
+	reset_street()
 	var start := observer.position
 	Input.action_press("forward")
 	for i in range(20):
@@ -254,14 +267,15 @@ func _smoke_check() -> void:
 	_physics_process(1.0/60.0)
 	Input.action_release("forward")
 	assert(observer.position.is_equal_approx(start), "Paused camera must stay still")
-	# Sweep through a real building wall at street height. This verifies camera
-	# physics against the imported model rather than a synthetic test obstacle.
+	# Sweep at the diorama deck level: rays toward the island must hit its solid
+	# base, and the camera must stop against the first hit point.
 	var space := get_world_3d().direct_space_state
+	var sweep_from := Vector3(0.0, 25.0, 120.0)
 	var tested := 0
 	for i in range(16):
 		var angle := TAU * float(i) / 16.0
 		var direction := Vector3(cos(angle),0,sin(angle))
-		var query := PhysicsRayQueryParameters3D.create(STREET_START,STREET_START+direction*220)
+		var query := PhysicsRayQueryParameters3D.create(sweep_from,sweep_from+direction*220)
 		query.exclude = [observer.get_rid()]
 		var hit := space.intersect_ray(query)
 		if hit.is_empty() or absf(hit.normal.y) > .2:
@@ -269,17 +283,20 @@ func _smoke_check() -> void:
 		observer.position = hit.position - direction*2.0
 		await get_tree().physics_frame
 		var collision := observer.move_and_collide(direction*4.0)
-		assert(collision != null, "Camera crossed an exterior wall")
+		assert(collision != null, "Camera crossed the mini-city")
 		tested += 1
-	assert(tested >= 4, "Insufficient real facade collision checks")
-	# Every visible perimeter segment must block passage from inside to outside.
-	var boundary := get_node("CityBlock").find_children("Boundary_Base*", "MeshInstance3D", true, false)
-	for wall in boundary:
-		var center: Vector3 = wall.global_transform * wall.get_aabb().get_center()
-		var away := Vector3(center.x,0,center.z).normalized()
-		var query := PhysicsRayQueryParameters3D.create(center-away*5,center+away*5)
-		query.exclude = [observer.get_rid()]
-		assert(not space.intersect_ray(query).is_empty(), "Open perimeter wall")
+	assert(tested >= 4, "Insufficient mini-city collision checks")
+	# Perimeter wall check only applies to the old city map, if present in the scene.
+	var boundary_count := 0
+	if get_node_or_null("CityBlock"):
+		var boundary := get_node("CityBlock").find_children("Boundary_Base*", "MeshInstance3D", true, false)
+		for wall in boundary:
+			var center: Vector3 = wall.global_transform * wall.get_aabb().get_center()
+			var away := Vector3(center.x,0,center.z).normalized()
+			var query := PhysicsRayQueryParameters3D.create(center-away*5,center+away*5)
+			query.exclude = [observer.get_rid()]
+			assert(not space.intersect_ray(query).is_empty(), "Open perimeter wall")
+		boundary_count = boundary.size()
 	set_captured(true)
 	reset_street()
 	assert(observer.position == npc_start, "Reset failed")
@@ -290,7 +307,7 @@ func _smoke_check() -> void:
 	await get_tree().create_timer(0.5).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(ProjectSettings.globalize_path("res://").path_join("../previews/enclosed_overview.png"))
-	print("SMOKE_OK | WASD / pause / reset / facade sweeps: ", tested, " / border walls: ", boundary.size(), " / collision meshes: ",collider_count)
+	print("SMOKE_OK | WASD / pause / reset / city sweeps: ", tested, " / border walls: ", boundary_count, " / collision meshes: ",collider_count)
 	get_tree().quit()
 
 func inspect_npc() -> void:
@@ -303,6 +320,10 @@ func inspect_npc() -> void:
 	overview = false
 
 func _npc_check() -> void:
+	if not pedestrians:
+		print("NPC_CHECK_SKIPPED | CityBlock map not in scene, no NPC routes")
+		get_tree().quit()
+		return
 	await get_tree().physics_frame
 	set_physics_process(false)
 	pedestrians.set_physics_process(false)
