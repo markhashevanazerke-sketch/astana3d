@@ -14,6 +14,8 @@ var light_count := 0
 var travel_total := 0.0
 var stop_events := 0
 var state_changes := 0
+var special_count := 0
+var travel_by_route := {}
 
 var _space
 var _car_spec := {}
@@ -28,6 +30,7 @@ var _time := 0.0
 var _running := false
 var _built := false
 var _was_fast := {}
+var _sirens := []
 
 
 func _ready() -> void:
@@ -63,6 +66,7 @@ func simulate(seconds: float, step_dt: float = 0.1) -> void:
 func step(dt: float) -> void:
 	_time += dt
 	_update_lights()
+	_update_sirens()
 	_update_cars(dt)
 
 
@@ -117,6 +121,7 @@ func _spawn_route_meta(rid: String, meta: Dictionary) -> void:
 		"closed": meta.get("closed", true),
 		"n_cars": int(meta.get("cars", 2)),
 		"cruise": meta.get("cruise", [3.5, 4.0]),
+		"special": meta.get("special", {}),
 	}
 
 
@@ -136,9 +141,13 @@ func _spawn_cars() -> void:
 		var route: Dictionary = _routes[rid]
 		var n: int = route["n_cars"]
 		var cruise: Array = route["cruise"]
+		var special: Dictionary = route.get("special", {})
 		for i in n:
 			var s: float = float(i) * float(route["length"]) / float(n)
-			var spec: Dictionary = _make_car(cruise[i % cruise.size()])
+			var kind: String = "car"
+			if int(special.get("index", -1)) == i:
+				kind = str(special.get("kind", "car"))
+			var spec: Dictionary = _make_vehicle(kind, cruise[i % cruise.size()])
 			var car := {
 				"node": spec["node"],
 				"route": rid,
@@ -153,21 +162,37 @@ func _spawn_cars() -> void:
 			_was_fast[uid] = false
 			uid += 1
 			_place_car(car)
+			if kind != "car":
+				special_count += 1
+				if spec.has("siren"):
+					_sirens.append(spec["siren"])
 	car_count = _cars.size()
 
 
-func _make_car(cruise: float) -> Dictionary:
+func _make_vehicle(kind: String, cruise: float) -> Dictionary:
 	var root := Node3D.new()
 	root.name = "ToyCar"
-	var ci := _cars.size()
+	var length: float = float(_car_spec.get("length", 2.5))
 	var col := Color(0.8, 0.8, 0.85)
-	if _colors.size() > 0:
-		col = Color(_colors[ci % _colors.size()][0], _colors[ci % _colors.size()][1], _colors[ci % _colors.size()][2])
+	if kind == "car":
+		var ci := _cars.size()
+		if _colors.size() > 0:
+			col = Color(_colors[ci % _colors.size()][0], _colors[ci % _colors.size()][1], _colors[ci % _colors.size()][2])
+	elif kind == "police":
+		root.name = "PoliceCar"
+		col = Color(0.92, 0.93, 0.96)
+		length = float(_car_spec.get("police_length", 2.7))
+	elif kind == "fire":
+		root.name = "FireTruck"
+		col = Color(0.82, 0.13, 0.10)
+		length = float(_car_spec.get("truck_length", 3.4))
+	var wl := float(_car_spec.get("width", 1.0)) * 0.5
+	var ll := length * 0.5
 	var body_mat := StandardMaterial3D.new()
 	body_mat.albedo_color = col
 	var body := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(float(_car_spec.get("width", 1.0)), 0.5, float(_car_spec.get("length", 2.5)))
+	bm.size = Vector3(float(_car_spec.get("width", 1.0)), 0.5, length)
 	body.mesh = bm
 	body.material_override = body_mat
 	body.position = Vector3(0, 0.5, 0)
@@ -175,17 +200,20 @@ func _make_car(cruise: float) -> Dictionary:
 	var cabin_mat := StandardMaterial3D.new()
 	cabin_mat.albedo_color = Color(0.15, 0.2, 0.28)
 	cabin_mat.roughness = 0.2
+	var cabin_len: float = length * 0.5
+	var cabin_z: float = 0.12
+	if kind == "fire":
+		cabin_len = 0.9
+		cabin_z = -ll + 0.45
 	var cabin := MeshInstance3D.new()
 	var cm := BoxMesh.new()
-	cm.size = Vector3(float(_car_spec.get("width", 1.0)) * 0.92, 0.42, float(_car_spec.get("length", 2.5)) * 0.5)
+	cm.size = Vector3(float(_car_spec.get("width", 1.0)) * 0.92, 0.42, cabin_len)
 	cabin.mesh = cm
 	cabin.material_override = cabin_mat
-	cabin.position = Vector3(0, 0.92, 0.12)
+	cabin.position = Vector3(0, 0.92, cabin_z)
 	root.add_child(cabin)
 	var wheel_mat := StandardMaterial3D.new()
 	wheel_mat.albedo_color = Color(0.08, 0.08, 0.09)
-	var wl := float(_car_spec.get("width", 1.0)) * 0.5
-	var ll := float(_car_spec.get("length", 2.5)) * 0.5
 	var wheels := []
 	for wx in [-1, 1]:
 		for wz in [-1, 1]:
@@ -223,7 +251,138 @@ func _make_car(cruise: float) -> Dictionary:
 		tail.material_override = tail_mat
 		tail.position = Vector3(hx * 0.38, 0.52, ll + 0.01)
 		root.add_child(tail)
-	return {"node": root, "cruise": cruise, "wheels": wheels}
+	var result := {"node": root, "cruise": cruise, "wheels": wheels}
+	if kind == "police":
+		_decorate_police(root, length, result)
+	elif kind == "fire":
+		_decorate_fire(root, length, result)
+	return result
+
+
+func _decorate_police(root: Node3D, length: float, result: Dictionary) -> void:
+	var stripe_mat := StandardMaterial3D.new()
+	stripe_mat.albedo_color = Color(0.13, 0.3, 0.75)
+	var stripe := MeshInstance3D.new()
+	var sm := BoxMesh.new()
+	sm.size = Vector3(float(_car_spec.get("width", 1.0)) + 0.04, 0.24, length)
+	stripe.mesh = sm
+	stripe.material_override = stripe_mat
+	stripe.position = Vector3(0, 0.42, 0)
+	root.add_child(stripe)
+	var bar_mat := StandardMaterial3D.new()
+	bar_mat.albedo_color = Color(0.1, 0.11, 0.14)
+	var bar := MeshInstance3D.new()
+	var bmx := BoxMesh.new()
+	bmx.size = Vector3(0.62, 0.1, 0.34)
+	bar.mesh = bmx
+	bar.material_override = bar_mat
+	bar.position = Vector3(0, 1.17, 0.1)
+	root.add_child(bar)
+	var blue_mat := StandardMaterial3D.new()
+	blue_mat.albedo_color = Color(0.2, 0.4, 1)
+	blue_mat.emission = Color(0.15, 0.35, 1)
+	blue_mat.emission_energy_multiplier = 5.0
+	var red_mat := StandardMaterial3D.new()
+	red_mat.albedo_color = Color(1, 0.2, 0.15)
+	red_mat.emission = Color(1, 0.12, 0.08)
+	red_mat.emission_energy_multiplier = 0.25
+	var blue_lamp := MeshInstance3D.new()
+	var lm := BoxMesh.new()
+	lm.size = Vector3(0.22, 0.12, 0.28)
+	blue_lamp.mesh = lm
+	blue_lamp.material_override = blue_mat
+	blue_lamp.position = Vector3(-0.16, 1.24, 0.1)
+	root.add_child(blue_lamp)
+	var red_lamp := MeshInstance3D.new()
+	var lm2 := BoxMesh.new()
+	lm2.size = Vector3(0.22, 0.12, 0.28)
+	red_lamp.mesh = lm2
+	red_lamp.material_override = red_mat
+	red_lamp.position = Vector3(0.16, 1.24, 0.1)
+	root.add_child(red_lamp)
+	var light := SpotLight3D.new()
+	light.light_color = Color(0.4, 0.55, 1.0)
+	light.light_energy = 0.0
+	light.spot_range = 5.0
+	if "spot_attenuation" in light:
+		light.spot_attenuation = 1.2
+	if "spot_fov" in light:
+		light.spot_fov = 85.0
+	light.position = Vector3(0, 1.45, 0.1)
+	light.rotation.x = -PI / 2.0
+	root.add_child(light)
+	result["siren"] = {"mats": [blue_mat, red_mat], "light": light, "phase": 0.0}
+
+
+func _decorate_fire(root: Node3D, length: float, result: Dictionary) -> void:
+	var ll := length * 0.5
+	var tank_mat := StandardMaterial3D.new()
+	tank_mat.albedo_color = Color(0.9, 0.9, 0.92)
+	tank_mat.roughness = 0.35
+	var tank := MeshInstance3D.new()
+	var tkm := CylinderMesh.new()
+	tkm.top_radius = 0.34
+	tkm.bottom_radius = 0.34
+	tkm.height = 2.0
+	tank.mesh = tkm
+	tank.material_override = tank_mat
+	tank.rotation.x = PI / 2.0
+	tank.position = Vector3(0, 1.12, 0.35)
+	root.add_child(tank)
+	var lad_mat := StandardMaterial3D.new()
+	lad_mat.albedo_color = Color(0.75, 0.76, 0.8)
+	var ladder := MeshInstance3D.new()
+	var ldm := BoxMesh.new()
+	ldm.size = Vector3(0.3, 0.07, 2.6)
+	ladder.mesh = ldm
+	ladder.material_override = lad_mat
+	ladder.position = Vector3(0, 1.42, 0.25)
+	root.add_child(ladder)
+	var bar_mat := StandardMaterial3D.new()
+	bar_mat.albedo_color = Color(0.1, 0.11, 0.14)
+	var bar := MeshInstance3D.new()
+	var bmx := BoxMesh.new()
+	bmx.size = Vector3(0.5, 0.09, 0.26)
+	bar.mesh = bmx
+	bar.material_override = bar_mat
+	bar.position = Vector3(0, 1.2, -ll + 0.55)
+	root.add_child(bar)
+	var red_mat := StandardMaterial3D.new()
+	red_mat.albedo_color = Color(1, 0.25, 0.18)
+	red_mat.emission = Color(1, 0.12, 0.08)
+	red_mat.emission_energy_multiplier = 5.0
+	var lamp := MeshInstance3D.new()
+	var lm := BoxMesh.new()
+	lm.size = Vector3(0.34, 0.11, 0.22)
+	lamp.mesh = lm
+	lamp.material_override = red_mat
+	lamp.position = Vector3(0, 1.27, -ll + 0.55)
+	root.add_child(lamp)
+	var light := SpotLight3D.new()
+	light.light_color = Color(1.0, 0.35, 0.3)
+	light.light_energy = 0.0
+	light.spot_range = 5.0
+	if "spot_attenuation" in light:
+		light.spot_attenuation = 1.2
+	if "spot_fov" in light:
+		light.spot_fov = 85.0
+	light.position = Vector3(0, 1.5, -ll + 0.55)
+	light.rotation.x = -PI / 2.0
+	root.add_child(light)
+	result["siren"] = {"mats": [red_mat], "light": light, "phase": 0.35}
+
+
+func _update_sirens() -> void:
+	for siren in _sirens:
+		var t: float = fposmod(_time * 2.2 + float(siren.get("phase", 0.0)), 1.0)
+		var a_on: bool = t < 0.5
+		var mats: Array = siren["mats"]
+		for i in mats.size():
+			var on: bool = a_on if i % 2 == 0 else not a_on
+			var mat: StandardMaterial3D = mats[i]
+			mat.emission_energy_multiplier = 5.0 if on else 0.25
+		var light: SpotLight3D = siren["light"]
+		light.light_energy = 2.5 if a_on else 0.0
 
 
 func _place_car(car: Dictionary, dt: float = 0.0) -> void:
@@ -400,12 +559,14 @@ func _update_cars(dt: float) -> void:
 		# traffic lights on this route
 		for light in _lights_by_route.get(car["route"], []):
 			var d: float = fposmod(float(light["stop_s"]) - float(car["s"]), float(route["length"]))
-			if d < 4.2:
+			if d < 1.2:
+				# committed to (or past) the stop line: no mid-intersection brake
+				continue
+			if d < 4.5:
 				if light["state"] == 2:
-					if d > 0.45:
-						target = minf(target, 0.0)
+					target = minf(target, 0.0)
 				elif light["state"] == 1:
-					var need: float = car["speed"] * car["speed"] / (2.0 * decel) + 0.6
+					var need: float = car["speed"] * car["speed"] / (2.0 * decel) + 0.8
 					if d > need:
 						target = minf(target, 0.0)
 		# car following: kinematic (can brake to a stop before the car ahead)
@@ -426,6 +587,7 @@ func _update_cars(dt: float) -> void:
 			car["speed"] = maxf(target, car["speed"] - decel * dt)
 		car["s"] = fposmod(car["s"] + car["speed"] * dt, route["length"])
 		travel_total += car["speed"] * dt
+		travel_by_route[car["route"]] = float(travel_by_route.get(car["route"], 0.0)) + car["speed"] * dt
 		_place_car(car, dt)
 		# stop event bookkeeping
 		var was: bool = _was_fast[car["uid"]]

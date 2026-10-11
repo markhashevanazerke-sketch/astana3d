@@ -340,11 +340,17 @@ func _smoke_check() -> void:
 			var cpos: Vector3 = car["node"].position
 			assert(cpos.is_finite(), "Car position is NaN")
 			assert(cpos.y > 10.0 and cpos.y < 45.0, "Car left the deck")
-		assert(traffic.car_count >= 8, "Not enough cars spawned")
+		assert(traffic.car_count >= 10, "Not enough cars spawned")
+		assert(traffic.special_count >= 2, "No emergency vehicles spawned")
 		assert(traffic.light_count >= 4, "Not enough traffic lights")
 		assert(traffic.travel_total > 30.0, "Cars did not drive")
 		assert(traffic.state_changes >= 6, "Traffic lights never changed state")
-		print("TRAFFIC_OK | cars: ", traffic.car_count, " / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / light changes: ", traffic.state_changes)
+		var route_report := ""
+		for rid in ["south", "central", "north"]:
+			var rt: float = float(traffic.travel_by_route.get(rid, 0.0))
+			assert(rt > 25.0, "Route %s was not used by its cars" % rid)
+			route_report += "%s=%.0fm " % [rid, rt]
+		print("TRAFFIC_OK | cars: ", traffic.car_count, " (special: ", traffic.special_count, ") / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / routes: ", route_report.strip_edges(), " / light changes: ", traffic.state_changes)
 	# Living town: deterministic pedestrian + shop-visit simulation.
 	if island_life:
 		island_life.set_physics_process(false)
