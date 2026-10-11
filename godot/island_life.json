@@ -1,5 +1,5 @@
 {
-  "comment": "Island life: pedestrian loops on probe-verified open plazas (each verified 1 m grid + clearance sphere) and market stalls. Rectangles: [x0, z0, x1, z1]. Ground height comes from terrain rays; each plaza is a single flat level.",
+  "comment": "Island life v3: pedestrians only on verified open plazas/sidewalks, NEVER on asphalt (verified by the top-down color grid, 11.10.2026). Roles: child plays at the playground, shoppers always stop at the stall, strollers walk and look around. Rectangles: [x0, z0, x1, z1].",
   "models": [
     "res://assets/characters/teen-boy_walk.glb",
     "res://assets/characters/cartoon_asian__boy_walk.glb",
@@ -8,61 +8,96 @@
     "res://assets/characters/everyday_jane_walk.glb"
   ],
   "walk_speed_min": 0.7,
-  "walk_speed_max": 1.15,
-  "browse_chance": 0.45,
-  "browse_min": 2.5,
-  "browse_max": 5.5,
-  "browse_cooldown": 12.0,
+  "walk_speed_max": 1.1,
+  "browse_chance": 0.5,
+  "browse_min": 3.0,
+  "browse_max": 6.0,
+  "browse_cooldown": 14.0,
   "trigger_radius": 1.3,
   "routes": [
     {
-      "name": "Deck plaza loop",
-      "rect": [ -34.0, 1.0, -29.0, 6.0 ],
-      "step": 0.5,
-      "walkers": 2
+      "name": "Playground",
+      "rect": [ -39.6, 31.8, -35.4, 33.8 ],
+      "step": 0.4,
+      "walkers": 1,
+      "role": "child",
+      "model": 1,
+      "scale": 0.85,
+      "speed_min": 0.9,
+      "speed_max": 1.25,
+      "browse_chance": 0.0,
+      "loiter_min": 1.0,
+      "loiter_max": 2.5,
+      "loiter_cd_min": 5.0,
+      "loiter_cd_max": 12.0
     },
     {
-      "name": "Terrace plaza loop",
-      "rect": [ -11.0, -14.0, -3.0, -6.0 ],
+      "name": "Deck plaza",
+      "rect": [ -34.0, 1.5, -30.0, 6.0 ],
       "step": 0.5,
-      "walkers": 2
+      "walkers": 3,
+      "roles": ["shopper", "stroller", "shopper"]
+    },
+    {
+      "name": "Terrace plaza",
+      "rect": [ -11.0, -14.0, -4.0, -7.0 ],
+      "step": 0.5,
+      "walkers": 2,
+      "roles": ["shopper", "stroller"]
     },
     {
       "name": "Mid-south terrace",
-      "rect": [ 1.0, -23.0, 10.0, -14.0 ],
+      "rect": [ 0.5, -23.0, 10.0, -15.0 ],
       "step": 0.5,
-      "walkers": 2
-    },
-    {
-      "name": "South promenade",
-      "rect": [ 6.0, 66.0, 11.0, 78.0 ],
-      "step": 0.5,
-      "walkers": 2
+      "walkers": 2,
+      "roles": ["stroller", "shopper"]
     },
     {
       "name": "South-east plaza",
-      "rect": [ 15.0, 81.0, 24.0, 87.0 ],
+      "rect": [ 15.5, 81.0, 23.5, 86.5 ],
       "step": 0.5,
-      "walkers": 2
+      "walkers": 2,
+      "role": "stroller",
+      "browse_chance": 0.25,
+      "loiter_min": 2.0,
+      "loiter_max": 4.0,
+      "loiter_cd_min": 8.0,
+      "loiter_cd_max": 18.0
     },
     {
       "name": "West high terrace",
-      "rect": [ -46.0, 75.0, -41.0, 79.0 ],
+      "rect": [ -46.5, 75.0, -42.0, 78.5 ],
       "step": 0.5,
-      "walkers": 1
+      "walkers": 1,
+      "role": "stroller",
+      "speed_min": 0.6,
+      "speed_max": 0.8,
+      "browse_chance": 0.0,
+      "loiter_min": 2.0,
+      "loiter_max": 4.0,
+      "loiter_cd_min": 8.0,
+      "loiter_cd_max": 20.0
     },
     {
-      "name": "West mid strip",
-      "rect": [ -38.0, 46.0, -26.0, 49.0 ],
+      "name": "West park strip",
+      "rect": [ -38.0, 46.0, -33.0, 47.0 ],
       "step": 0.5,
-      "walkers": 1
+      "walkers": 1,
+      "role": "stroller",
+      "speed_min": 0.65,
+      "speed_max": 0.85,
+      "browse_chance": 0.0,
+      "loiter_min": 1.5,
+      "loiter_max": 3.5,
+      "loiter_cd_min": 8.0,
+      "loiter_cd_max": 20.0
     }
   ],
   "shops": [
-    { "pos": [ -30.5, 20.9, 3.5 ], "entry": [ -29.0, 21.0, 3.5 ], "route": 0, "awning": "#e2574c", "sign": "#ffd23e", "light": "#ffdf9e" },
-    { "pos": [ -7.0, 14.85, -13.0 ], "entry": [ -7.0, 14.85, -14.0 ], "route": 1, "awning": "#3aa6a0", "sign": "#7de3ff", "light": "#cfefff" },
-    { "pos": [ -7.0, 14.85, -8.0 ], "entry": [ -7.0, 14.85, -6.0 ], "route": 1, "awning": "#e0a63a", "sign": "#ffe9a8", "light": "#ffe9b8" },
-    { "pos": [ 3.5, 17.28, -18.5 ], "entry": [ 1.0, 17.28, -18.0 ], "route": 2, "awning": "#d8843e", "sign": "#ffe08a", "light": "#ffdf9e" },
-    { "pos": [ 8.5, 26.04, 72.0 ], "entry": [ 6.0, 26.04, 72.0 ], "route": 3, "awning": "#8a4cc8", "sign": "#ff9ecb", "light": "#ffd9f0" }
+    { "pos": [ -32.0, 20.9, 3.5 ], "entry": [ -30.0, 21.0, 3.5 ], "route": 1, "awning": "#e2574c", "sign": "#ffd23e", "light": "#ffdf9e" },
+    { "pos": [ -8.0, 14.85, -12.5 ], "entry": [ -8.0, 14.85, -14.0 ], "route": 2, "awning": "#3aa6a0", "sign": "#7de3ff", "light": "#cfefff" },
+    { "pos": [ -8.0, 14.85, -8.5 ], "entry": [ -8.0, 14.85, -7.0 ], "route": 2, "awning": "#e0a63a", "sign": "#ffe9a8", "light": "#ffe9b8" },
+    { "pos": [ 5.0, 17.28, -18.5 ], "entry": [ 0.5, 17.28, -18.0 ], "route": 3, "awning": "#d8843e", "sign": "#ffe08a", "light": "#ffdf9e" },
+    { "pos": [ 21.5, 26.04, 84.0 ], "entry": [ 23.5, 26.04, 84.0 ], "route": 4, "awning": "#8a4cc8", "sign": "#ff9ecb", "light": "#ffd9f0" }
   ]
 }

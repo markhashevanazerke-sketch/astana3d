@@ -76,6 +76,21 @@ func _build() -> void:
 		var route := _finalize_route(points)
 		route["name"] = definition.get("name", "route")
 		route["walkers"] = int(definition.get("walkers", 3))
+		# Роль и параметры маршрута: ребёнок/шопер/прогуляк ходят по-разному.
+		route["role"] = str(definition.get("role", ""))
+		route["roles"] = definition.get("roles", [])
+		route["model"] = int(definition.get("model", -1))
+		route["scale"] = float(definition.get("scale", 1.0))
+		route["speed_min"] = float(definition.get("speed_min", _spec.get("walk_speed_min", 0.7)))
+		route["speed_max"] = float(definition.get("speed_max", _spec.get("walk_speed_max", 1.15)))
+		route["browse_chance"] = float(definition.get("browse_chance", _spec.get("browse_chance", 0.55)))
+		route["browse_min"] = float(definition.get("browse_min", _spec.get("browse_min", 3.0)))
+		route["browse_max"] = float(definition.get("browse_max", _spec.get("browse_max", 7.0)))
+		route["browse_cool"] = float(definition.get("browse_cooldown", _spec.get("browse_cooldown", 15.0)))
+		route["loiter_min"] = float(definition.get("loiter_min", 1.5))
+		route["loiter_max"] = float(definition.get("loiter_max", 3.5))
+		route["loiter_cd_min"] = float(definition.get("loiter_cd_min", 10.0))
+		route["loiter_cd_max"] = float(definition.get("loiter_cd_max", 26.0))
 		_routes.append(route)
 	for definition in _spec.get("shops", []):
 		var pos: Vector3 = Vector3(float(definition["pos"][0]), float(definition["pos"][1]), float(definition["pos"][2]))
@@ -92,7 +107,7 @@ func _build() -> void:
 		var route: Dictionary = _routes[route_index]
 		var count: int = int(route["walkers"])
 		for i in count:
-			_spawn_walker(route_index, id, count)
+			_spawn_walker(route_index, id, count, i)
 			id += 1
 	walker_count = _walkers.size()
 	print("ISLAND_LIFE_READY | walkers=%d shops=%d routes=%d" % [walker_count, shop_count, _routes.size()])
@@ -157,11 +172,11 @@ func _step(delta: float) -> void:
 				zone_stop = stop
 				break
 		if in_zone and not bool(walker["prev_in_zone"]) and float(walker["cool"]) <= 0.0:
-			if _rng.randf() < float(_spec.get("browse_chance", 0.55)):
+			if _rng.randf() < float(walker["browse_chance"]):
 				walker["state"] = "browse"
-				walker["browse_left"] = lerpf(float(_spec.get("browse_min", 3.0)), float(_spec.get("browse_max", 7.0)), _rng.randf())
+				walker["browse_left"] = lerpf(float(walker["browse_min"]), float(walker["browse_max"]), _rng.randf())
 				walker["browse_target"] = zone_stop
-				walker["cool"] = float(_spec.get("browse_cooldown", 15.0))
+				walker["cool"] = float(walker["browse_cool"])
 				visit_count += 1
 		walker["prev_in_zone"] = in_zone
 		walker["cool"] = float(walker["cool"]) - delta
@@ -169,9 +184,9 @@ func _step(delta: float) -> void:
 		walker["loiter_cd"] = float(walker["loiter_cd"]) - delta
 		if float(walker["loiter_cd"]) <= 0.0:
 			walker["state"] = "loiter"
-			walker["loiter_left"] = lerpf(1.5, 3.5, _rng.randf())
+			walker["loiter_left"] = lerpf(float(walker["loiter_min"]), float(walker["loiter_max"]), _rng.randf())
 			walker["loiter_yaw"] = node.rotation.y + (2.0 * _rng.randf() - 1.0) * 2.4
-			walker["loiter_cd"] = lerpf(10.0, 26.0, _rng.randf())
+			walker["loiter_cd"] = lerpf(float(walker["loiter_cd_min"]), float(walker["loiter_cd_max"]), _rng.randf())
 
 func _rect_loop(x0: float, z0: float, x1: float, z1: float, step: float) -> PackedVector3Array:
 	var points := PackedVector3Array()
@@ -264,17 +279,48 @@ func _nearest_surface(pos: Vector3, space, level: float) -> float:
 			best_diff = d
 	return best
 
-func _spawn_walker(route_index: int, id: int, group_size: int) -> void:
+func _spawn_walker(route_index: int, id: int, group_size: int, walker_index: int) -> void:
 	var route: Dictionary = _routes[route_index]
-	var model_id: int = id % _models.size() if _models.size() > 0 else 0
+	var role := str(route.get("role", ""))
+	var roles: Array = route.get("roles", [])
+	if walker_index < roles.size():
+		role = str(roles[walker_index])
+	var model_id := int(route.get("model", -1))
+	if model_id < 0 or model_id >= _models.size():
+		model_id = id % _models.size() if _models.size() > 0 else 0
+	# Эффективные параметры поведения: роль переопределяет параметры маршрута.
+	var browse_chance := float(route.get("browse_chance", 0.5))
+	var browse_min := float(route.get("browse_min", 3.0))
+	var browse_max := float(route.get("browse_max", 6.0))
+	var browse_cool := float(route.get("browse_cool", 14.0))
+	var loiter_min := float(route.get("loiter_min", 1.5))
+	var loiter_max := float(route.get("loiter_max", 3.5))
+	var loiter_cd_min := float(route.get("loiter_cd_min", 10.0))
+	var loiter_cd_max := float(route.get("loiter_cd_max", 26.0))
+	if role == "shopper":
+		# Взрослый идёт за покупками: у лавки останавливается всегда.
+		browse_chance = 1.0
+		browse_min = maxf(browse_min, 4.0)
+		browse_max = maxf(browse_max, 6.5)
+		browse_cool = 30.0
+	elif role == "stroller":
+		browse_chance = minf(browse_chance, 0.15)
+		loiter_min = maxf(loiter_min, 2.0)
+		loiter_max = maxf(loiter_max, 4.0)
+	elif role == "child":
+		browse_chance = 0.0
+		loiter_cd_min = minf(loiter_cd_min, 8.0)
+		loiter_cd_max = minf(loiter_cd_max, 14.0)
 	var root := Node3D.new()
 	root.name = "Islander_%02d" % id
 	add_child(root)
 	var visual: Node3D = _models[model_id].instantiate()
+	var s: float = float(route.get("scale", 1.0))
+	visual.scale = Vector3(s, s, s)
 	root.add_child(visual)
 	var players := visual.find_children("*", "AnimationPlayer", true, false)
 	var animation: AnimationPlayer = players[0] as AnimationPlayer if players.size() > 0 else null
-	var speed := lerpf(float(_spec.get("walk_speed_min", 0.75)), float(_spec.get("walk_speed_max", 1.05)), _rng.randf())
+	var speed := lerpf(float(route.get("speed_min", 0.75)), float(route.get("speed_max", 1.05)), _rng.randf())
 	var start: float = fposmod(float(id) * float(route["length"]) / float(group_size), float(route["length"]))
 	var at: Dictionary = _sample(route, start)
 	root.position = at["position"]
@@ -288,10 +334,15 @@ func _spawn_walker(route_index: int, id: int, group_size: int) -> void:
 	var at0: Dictionary = _sample(route, start)
 	var walker := {
 		"node": root, "animation": animation, "route": route_index,
-		"distance": start, "speed": speed, "model": model_id, "travelled": 0.0,
+		"distance": start, "speed": speed, "model": model_id, "role": role, "travelled": 0.0,
 		"state": "walk", "browse_left": 0.0, "browse_target": at0["position"],
 		"cool": 0.0, "prev_in_zone": false,
-		"loiter_left": 0.0, "loiter_yaw": 0.0, "loiter_cd": lerpf(4.0, 20.0, _rng.randf()),
+		"browse_chance": browse_chance, "browse_min": browse_min, "browse_max": browse_max,
+		"browse_cool": browse_cool,
+		"loiter_left": 0.0, "loiter_yaw": 0.0,
+		"loiter_min": loiter_min, "loiter_max": loiter_max,
+		"loiter_cd": lerpf(loiter_cd_min, loiter_cd_max, _rng.randf()),
+		"loiter_cd_min": loiter_cd_min, "loiter_cd_max": loiter_cd_max,
 	}
 	_walkers.append(walker)
 

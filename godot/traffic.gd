@@ -32,8 +32,8 @@ var _built := false
 var _was_fast := {}
 var _sirens := []
 var _build_tries := 0
-# Колонки, где точно есть дорога (юг, север, центр) — гейт «физика готова».
-const PROBE_XZ := [Vector2(7.0, 66.0), Vector2(38.0, 12.0), Vector2(7.0, 56.0)]
+# Колонки, где точно есть дорога — гейт «физика готова».
+const PROBE_XZ := [Vector2(7.0, 66.0), Vector2(7.0, -9.0), Vector2(-32.0, 3.0)]
 
 
 func _ready() -> void:
@@ -120,17 +120,20 @@ func _spawn_route_meta(rid: String, meta: Dictionary) -> void:
 		var b: Vector3 = pts[(i + 1) % pts.size()]
 		smoothed.append(a.lerp(b, 0.25))
 		smoothed.append(a.lerp(b, 0.75))
-	# Road height: level = median of the top hits; every point snaps to the
-	# surface closest to that level. Overhangs (roof slabs above the street)
-	# and gaps (holes in the block) can no longer throw cars onto roofs or
-	# into the ground — they stay glued to the road level.
+	# Road height: the chain starts from the median of the top hits and each
+	# point takes the surface closest to the PREVIOUS point's level. This both
+	# rejects overhangs (roof slabs far above the street) and gaps (holes in
+	# the block) and follows the real ramps where the island road steps up
+	# through the junction (24.4 -> 26.0 m).
 	var first_ys := []
 	for i in smoothed.size():
 		var hs: Array = _column_hits(smoothed[i], 45.0, -25.0, 6)
 		first_ys.append(float(hs[0]) if hs.size() > 0 else -999.0)
 	var level := _road_level(first_ys)
+	var prev_y := level
 	for i in smoothed.size():
-		smoothed[i].y = _nearest_surface(smoothed[i], level)
+		prev_y = _chain_surface(smoothed[i], prev_y)
+		smoothed[i].y = prev_y
 	# cumulative distances (closed loop)
 	var cum := [0.0]
 	var total := 0.0
@@ -176,10 +179,29 @@ func _road_level(ys: Array) -> float:
 
 func _nearest_surface(pos: Vector3, level: float) -> float:
 	var best := level
-	var best_diff := 1.2
+	var best_diff := 1.8
 	var hs: Array = _column_hits(pos, 45.0, -25.0, 6)
 	for y in hs:
 		var d := absf(float(y) - level)
+		if d < best_diff:
+			best = float(y)
+			best_diff = d
+	return best
+
+
+# Чейн-высота: поверхность, ближайшая к высоте предыдущей точки. Если в
+# колонке пусто (дыра в геометрии) — ищет по окрестности 3×3.
+func _chain_surface(pos: Vector3, prev_y: float) -> float:
+	var best := prev_y
+	var best_diff := 1.8
+	var hs: Array = _column_hits(pos, 45.0, -25.0, 6)
+	if hs.is_empty():
+		hs = []
+		for dx in [-1.0, 0.0, 1.0]:
+			for dz in [-1.0, 0.0, 1.0]:
+				hs.append_array(_column_hits(Vector3(pos.x + dx, 0.0, pos.z + dz), 45.0, -25.0, 3))
+	for y in hs:
+		var d := absf(float(y) - prev_y)
 		if d < best_diff:
 			best = float(y)
 			best_diff = d
@@ -484,7 +506,7 @@ func _sample(route: Dictionary, s: float) -> Dictionary:
 	var length: float = route["length"]
 	s = fposmod(s, length)
 	var lo := 0
-	var hi := pts.size() - 1
+	var hi := cum.size() - 1
 	while hi - lo > 1:
 		var mid := (lo + hi) / 2
 		if cum[mid] <= s:
@@ -505,16 +527,37 @@ func _sample(route: Dictionary, s: float) -> Dictionary:
 
 func _spawn_lights() -> void:
 	for light in _lights:
-		var route: Dictionary = _routes[light["route"]]
-		var jx: float = float(light["junction"][0])
-		var jz: float = float(light["junction"][1])
-		var j_idx := 0
-		for i in route["pts"].size():
-			var p: Vector3 = route["pts"][i]
-			if absf(p.x - jx) < 0.6 and absf(p.z - jz) < 0.6:
-				j_idx = i
-				break
-		light["stop_s"] = fposmod(route["cum"][j_idx] - 0.9, route["length"])
+		var rid: String = str(light.get("route", ""))
+		if _routes.has(rid):
+			var route: Dictionary = _routes[rid]
+			var jx: float = float(light["junction"][0])
+			var jz: float = float(light["junction"][1])
+			# nearest point of the route polyline (segment projection)
+			var best_idx := 0
+			var best_d := 1e9
+			for i in route["pts"].size():
+				var a: Vector3 = route["pts"][i]
+				var b: Vector3 = route["pts"][(i + 1) % route["pts"].size()]
+				var ab := Vector3(b.x - a.x, 0.0, b.z - a.z)
+				var l2 := ab.length_squared()
+				var t := 0.0 if l2 < 0.0001 else clampf(Vector3(jx - a.x, 0.0, jz - a.z).dot(ab) / l2, 0.0, 1.0)
+				var p := Vector3(a.x + ab.x * t, 0.0, a.z + ab.z * t)
+				var d: float = (Vector3(jx, 0.0, jz) - p).length()
+				if d < best_d:
+					best_d = d
+					best_idx = i
+				var a2: Vector3 = route["pts"][best_idx]
+				var b2: Vector3 = route["pts"][(best_idx + 1) % route["pts"].size()]
+				var ab2 := Vector3(b2.x - a2.x, 0.0, b2.z - a2.z)
+				var l2b := ab2.length_squared()
+				var tb := 0.0 if l2b < 0.0001 else clampf(Vector3(jx - a2.x, 0.0, jz - a2.z).dot(ab2) / l2b, 0.0, 1.0)
+				var s_at: float = float(route["cum"][best_idx]) + tb * a2.distance_to(b2)
+				light["stop_s"] = fposmod(s_at - 0.9, float(route["length"]))
+			if best_d > 3.0:
+				push_warning("Traffic: light %s junction is far from route %s d=%.2f" % [light.get("id", "?"), rid, best_d])
+		else:
+			# Decorative light (no cars on its road): just blinks.
+			light["stop_s"] = 0.0
 		light["state"] = 2
 		light["root"] = _make_light(light)
 		add_child(light["root"])
@@ -529,9 +572,15 @@ func _make_light(light: Dictionary) -> Node3D:
 	var gy := _ground_y(Vector3(px, 0, pz))
 	root.position = Vector3(px, gy, pz)
 	# face the approaching car (approach direction from the route at the stop line)
-	var route: Dictionary = _routes[light["route"]]
-	var sample := _sample(route, light["stop_s"])
-	var toward: Vector3 = -Vector3(sample["dir"])
+	var rid2: String = str(light.get("route", ""))
+	var toward: Vector3
+	if _routes.has(rid2):
+		var route2: Dictionary = _routes[rid2]
+		var sample := _sample(route2, light["stop_s"])
+		toward = -Vector3(sample["dir"])
+	else:
+		var face: Array = light.get("face", [0.0, -1.0])
+		toward = Vector3(float(face[0]), 0.0, float(face[1]))
 	root.rotation.y = atan2(toward.x, toward.z)
 	var pole_mat := StandardMaterial3D.new()
 	pole_mat.albedo_color = Color(0.25, 0.27, 0.3)

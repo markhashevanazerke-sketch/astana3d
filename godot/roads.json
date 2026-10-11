@@ -1,10 +1,10 @@
 {
+  "comment": "Toy-town traffic v3. Cars drive only on real asphalt (verified by the top-down color grid, 11.10.2026). Two closed loops: the main street (two opposite lanes, junction, dead-end branch with U-turn) and the parking lot. 5 cars total, spaced evenly so no car follows another. Lights: 3 functional + 2 decorative.",
   "car": {
     "width": 1.0,
     "length": 2.5,
     "police_length": 2.7,
     "truck_length": 3.4,
-    "height": 1.05,
     "cruise_min": 2.4,
     "cruise_max": 4.4,
     "accel": 2.5,
@@ -12,67 +12,47 @@
     "follow_gap": 7.0,
     "follow_range": 16.0
   },
+  "cycle": { "green": 6.0, "yellow": 1.5 },
+  "colors": [
+    [0.85, 0.32, 0.25],
+    [0.25, 0.5, 0.85],
+    [0.9, 0.78, 0.25],
+    [0.3, 0.75, 0.45],
+    [0.85, 0.85, 0.88]
+  ],
   "routes": {
-    "south": {
+    "main": {
       "points": [
-        [11,80],[14,80],[18,80],[22,80],[25,80],[25,81],[25,82],[25,83],[25,84],
-        [24,85],[23,87],[22,88],[18,88],[16,87],[15,85],[14,83],[13,81]
+        [5.5, -1.0],
+        [5.5, 65.5],
+        [17.0, 66.5],
+        [17.0, 77.0],
+        [15.0, 77.0],
+        [15.0, 66.5],
+        [8.5, 66.0],
+        [8.5, -1.0]
       ],
-      "closed": true,
       "cars": 3,
-      "cruise": [3.6, 4.2, 3.9],
-      "special": { "kind": "police", "index": 1 }
+      "cruise": [3.2, 3.6, 4.0],
+      "special": { "index": 1, "kind": "police" }
     },
-    "south_strip": {
+    "parking": {
       "points": [
-        [5,66],[5,67],[5,68],[5,69],[5,70],[5,71],[5,72],[5,73],[5,74],
-        [5,75],[5,76],[5,77],[8,77],[11,77],[11,76],[11,74],[11,72],
-        [11,70],[10,68],[8,67],[6,66]
+        [1.5, -7.0],
+        [12.5, -7.0],
+        [12.5, -11.5],
+        [1.5, -11.5]
       ],
-      "closed": true,
-      "cars": 3,
-      "cruise": [3.2, 3.8, 3.5]
-    },
-    "central": {
-      "points": [
-        [5,54],[5,55],[5,56],[5,57],[5,58],[5,59],[5,60],[6,61],[7,61],
-        [8,60],[8,59],[8,58],[8,57],[8,56],[8,55],[8,54],[7,54],[6,54]
-      ],
-      "closed": true,
       "cars": 2,
-      "cruise": [3.2, 3.4]
-    },
-    "north": {
-      "points": [
-        [38,10],[38,11],[38,12],[38,13],[38,14],[38,15],[38,16],[38,17],
-        [37,17],[37,18],[38,18],[38,17],[39,16],[39,15],[39,14],[40,14],
-        [41,13],[42,12],[41,11],[40,11],[39,11],[39,10]
-      ],
-      "closed": true,
-      "cars": 2,
-      "cruise": [3.0, 3.2],
-      "special": { "kind": "fire", "index": 0 }
+      "cruise": [2.6, 3.0],
+      "special": { "index": 0, "kind": "fire" }
     }
   },
   "lights": [
-    { "id": "j1", "route": "south", "junction": [11,80], "stop_dist": 3.2, "pole": [12.6,79.4], "phase": 0.0 },
-    { "id": "j2", "route": "central", "junction": [5,57], "stop_dist": 3.0, "pole": [4.0,56.0], "phase": 2.2 },
-    { "id": "j3", "route": "south", "junction": [25,83], "stop_dist": 3.2, "pole": [26.0,83.0], "phase": 4.4 },
-    { "id": "j4", "route": "north", "junction": [38,17], "stop_dist": 2.8, "pole": [36.4,17.4], "phase": 6.6 },
-    { "id": "j5", "route": "central", "junction": [7,61], "stop_dist": 3.0, "pole": [7.6,60.4], "phase": 8.8 },
-    { "id": "j6", "route": "north", "junction": [37,18], "stop_dist": 2.8, "pole": [38.6,18.5], "phase": 11.0 },
-    { "id": "j7", "route": "south_strip", "junction": [5,70], "stop_dist": 3.0, "pole": [6.4,71.4], "phase": 3.3 },
-    { "id": "j8", "route": "south_strip", "junction": [11,70], "stop_dist": 3.0, "pole": [12.4,70.4], "phase": 9.9 }
-  ],
-  "cycle": { "green": 6.0, "yellow": 1.5 },
-  "colors": [
-    [0.85, 0.15, 0.12],
-    [0.16, 0.35, 0.75],
-    [0.92, 0.65, 0.10],
-    [0.25, 0.65, 0.35],
-    [0.80, 0.80, 0.85],
-    [0.35, 0.35, 0.40],
-    [0.70, 0.20, 0.50],
-    [0.55, 0.55, 0.60]
+    { "id": "l1", "route": "main", "junction": [11.25, 66.0], "pole": [3.2, 65.2], "phase": 0.0 },
+    { "id": "l2", "route": "main", "junction": [17.0, 70.0], "pole": [13.2, 70.0], "phase": 3.5 },
+    { "id": "l3", "route": "parking", "junction": [7.0, -7.0], "pole": [7.0, -5.6], "phase": 7.0 },
+    { "id": "l4", "route": "", "pole": [31.0, 62.5], "phase": 1.8, "face": [0.0, -1.0] },
+    { "id": "l5", "route": "", "pole": [-13.5, 5.2], "phase": 5.2, "face": [0.7, -0.7] }
   ]
 }

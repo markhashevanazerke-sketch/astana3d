@@ -342,33 +342,30 @@ func _smoke_check() -> void:
 	# Traffic: run a deterministic simulation and sanity-check the fleet.
 	if traffic:
 		traffic.set_process(false)
-		var car_ymin := {}
-		var car_ymax := {}
+		var car_y_prev := {}
 		for i in 300:
 			traffic.step(0.1)
 			for car in traffic._cars:
 				var uid: int = int(car["uid"])
 				var y: float = car["node"].position.y
-				if not car_ymin.has(uid):
-					car_ymin[uid] = y
-					car_ymax[uid] = y
-				car_ymin[uid] = minf(float(car_ymin[uid]), y)
-				car_ymax[uid] = maxf(float(car_ymax[uid]), y)
-		for uid in car_ymin:
-			assert(float(car_ymax[uid]) - float(car_ymin[uid]) < 1.2, "Car %d left its road level" % uid)
+				if car_y_prev.has(uid):
+					assert(absf(y - float(car_y_prev[uid])) < 0.6, "Car %d fell or jumped (y %f -> %f)" % [uid, float(car_y_prev[uid]), y])
+				car_y_prev[uid] = y
 		for car in traffic._cars:
 			var cpos: Vector3 = car["node"].position
 			assert(cpos.is_finite(), "Car position is NaN")
 			assert(cpos.y > 10.0 and cpos.y < 45.0, "Car left the deck")
-		assert(traffic.car_count >= 9, "Not enough cars spawned")
+		assert(traffic.car_count >= 5, "Not enough cars spawned")
 		assert(traffic.special_count >= 2, "No emergency vehicles spawned")
-		assert(traffic.light_count >= 6, "Not enough traffic lights")
+		assert(traffic.light_count >= 4, "Not enough traffic lights")
 		assert(traffic.travel_total > 30.0, "Cars did not drive")
+		assert(traffic.stop_events >= 1, "Cars never stopped at a light")
 		assert(traffic.state_changes >= 6, "Traffic lights never changed state")
 		var route_report := ""
-		for rid in ["south", "south_strip", "central", "north"]:
+		var route_thresholds := {"main": 80.0, "parking": 40.0}
+		for rid in route_thresholds:
 			var rt: float = float(traffic.travel_by_route.get(rid, 0.0))
-			assert(rt > 20.0, "Route %s was not used by its cars" % rid)
+			assert(rt > float(route_thresholds[rid]), "Route %s was not used by its cars" % rid)
 			route_report += "%s=%.0fm " % [rid, rt]
 		print("TRAFFIC_OK | cars: ", traffic.car_count, " (special: ", traffic.special_count, ") / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / routes: ", route_report.strip_edges(), " / light changes: ", traffic.state_changes)
 	# Living town: deterministic pedestrian + shop-visit simulation.
