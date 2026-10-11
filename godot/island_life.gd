@@ -5,6 +5,8 @@ extends Node3D
 # clearance-пробой по реальным коллизиям острова.
 
 const LIFESTYLE_PATH := "res://island_life.json"
+# Колонки на площадях, где точно есть пол — гейт «физика готова».
+const PROBE_XZ := [Vector2(-32.0, 3.0), Vector2(-7.0, -10.0), Vector2(5.0, -18.0)]
 
 var walker_count := 0
 var shop_count := 0
@@ -29,9 +31,24 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_frame += 1
 	# Физика должна успеть зарегистрировать коллизии острова, иначе лучи
-	# высоты уйдут в пустоту (гонка _ready).
-	if not _built and _frame >= 2:
-		_build()
+	# высоты уйдут в пустоту (гонка _ready). Ждём контрольные колонки.
+	if not _built:
+		if _frame >= 2 and _ground_ready():
+			_build()
+		elif _frame >= 600:
+			push_error("IslandLife: ground never became queryable; pedestrians disabled")
+			set_physics_process(false)
+
+
+func _ground_ready() -> bool:
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return false
+	for p in PROBE_XZ:
+		var ray := PhysicsRayQueryParameters3D.create(Vector3(p.x, 45.0, p.y), Vector3(p.x, -25.0, p.y))
+		if space.intersect_ray(ray).is_empty():
+			return false
+	return true
 
 func _physics_process(delta: float) -> void:
 	if _built:
@@ -102,6 +119,15 @@ func _step(delta: float) -> void:
 			if float(walker["browse_left"]) <= 0.0:
 				walker["state"] = "walk"
 			continue
+		if walker["state"] == "loiter":
+			# Пауза на маршруте: стоит и неторопливо оглядывается.
+			walker["loiter_left"] = float(walker["loiter_left"]) - delta
+			node.rotation.y = lerp_angle(node.rotation.y, float(walker["loiter_yaw"]), 1.0 - exp(-2.0 * delta))
+			if animation:
+				animation.speed_scale = 0.0
+			if float(walker["loiter_left"]) <= 0.0:
+				walker["state"] = "walk"
+			continue
 		var blocked := false
 		if is_instance_valid(observer):
 			var difference: Vector3 = observer.global_position - node.global_position
@@ -139,6 +165,13 @@ func _step(delta: float) -> void:
 				visit_count += 1
 		walker["prev_in_zone"] = in_zone
 		walker["cool"] = float(walker["cool"]) - delta
+		# Случайная пауза: остановиться, оглядеться, продолжить путь.
+		walker["loiter_cd"] = float(walker["loiter_cd"]) - delta
+		if float(walker["loiter_cd"]) <= 0.0:
+			walker["state"] = "loiter"
+			walker["loiter_left"] = lerpf(1.5, 3.5, _rng.randf())
+			walker["loiter_yaw"] = node.rotation.y + (2.0 * _rng.randf() - 1.0) * 2.4
+			walker["loiter_cd"] = lerpf(10.0, 26.0, _rng.randf())
 
 func _rect_loop(x0: float, z0: float, x1: float, z1: float, step: float) -> PackedVector3Array:
 	var points := PackedVector3Array()
@@ -173,9 +206,17 @@ func _smooth(points: PackedVector3Array) -> PackedVector3Array:
 
 func _finalize_route(points: PackedVector3Array) -> Dictionary:
 	var space := get_world_3d().direct_space_state
+	# Уровень площадки — медиана верхних попаданий; каждая точка берёт
+	# ближайшую к нему поверхность (яма/перекладина не могут утащить
+	# пешехода вниз или поставить на крышу).
+	var first_ys := []
+	for point in points:
+		var hs: Array = _column_hits(point, space, 45.0, -25.0, 6)
+		first_ys.append(float(hs[0]) if hs.size() > 0 else -999.0)
+	var level := _road_level(first_ys)
 	var refined := PackedVector3Array()
 	for point in points:
-		refined.append(Vector3(point.x, _ground_y(point, space), point.z))
+		refined.append(Vector3(point.x, _nearest_surface(point, space, level), point.z))
 	refined.append(refined[0])
 	var cum := PackedFloat32Array([0.0])
 	for i in range(1, refined.size()):
@@ -187,14 +228,41 @@ func _finalize_route(points: PackedVector3Array) -> Dictionary:
 		"stops": [],
 	}
 
-func _ground_y(point: Vector3, space) -> float:
-	# Луч строго сверху вниз — как в clearance-пробе: первая встреча с
-	# геометрией и есть поверхность пола площадки.
-	var ray := PhysicsRayQueryParameters3D.create(Vector3(point.x, 45.0, point.z), Vector3(point.x, -25.0, point.z))
-	var hit: Dictionary = space.intersect_ray(ray)
-	if hit.is_empty():
-		return point.y
-	return hit.position.y
+
+func _column_hits(pos: Vector3, space, top: float, bottom: float, max_hits: int) -> Array:
+	var out := []
+	var from := Vector3(pos.x, top, pos.z)
+	for i in max_hits:
+		var ray := PhysicsRayQueryParameters3D.create(from, Vector3(pos.x, bottom, pos.z))
+		var hit: Dictionary = space.intersect_ray(ray)
+		if hit.is_empty():
+			break
+		out.append(hit.position.y)
+		from = Vector3(pos.x, hit.position.y - 0.06, pos.z)
+		if from.y < bottom:
+			break
+	return out
+
+
+func _road_level(ys: Array) -> float:
+	var good := []
+	for y in ys:
+		if float(y) > -900.0:
+			good.append(float(y))
+	good.sort()
+	return float(good[good.size() / 2]) if good.size() > 0 else 20.0
+
+
+func _nearest_surface(pos: Vector3, space, level: float) -> float:
+	var best := level
+	var best_diff := 1.2
+	var hs: Array = _column_hits(pos, space, 45.0, -25.0, 6)
+	for y in hs:
+		var d := absf(float(y) - level)
+		if d < best_diff:
+			best = float(y)
+			best_diff = d
+	return best
 
 func _spawn_walker(route_index: int, id: int, group_size: int) -> void:
 	var route: Dictionary = _routes[route_index]
@@ -223,6 +291,7 @@ func _spawn_walker(route_index: int, id: int, group_size: int) -> void:
 		"distance": start, "speed": speed, "model": model_id, "travelled": 0.0,
 		"state": "walk", "browse_left": 0.0, "browse_target": at0["position"],
 		"cool": 0.0, "prev_in_zone": false,
+		"loiter_left": 0.0, "loiter_yaw": 0.0, "loiter_cd": lerpf(4.0, 20.0, _rng.randf()),
 	}
 	_walkers.append(walker)
 

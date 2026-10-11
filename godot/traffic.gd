@@ -31,6 +31,9 @@ var _running := false
 var _built := false
 var _was_fast := {}
 var _sirens := []
+var _build_tries := 0
+# Колонки, где точно есть дорога (юг, север, центр) — гейт «физика готова».
+const PROBE_XZ := [Vector2(7.0, 66.0), Vector2(38.0, 12.0), Vector2(7.0, 56.0)]
 
 
 func _ready() -> void:
@@ -41,15 +44,29 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if not _built:
-		# Defer geometry to the first process frame so that all colliders
-		# (added by the viewer during _ready) are registered in the physics
-		# server before the terrain rays are cast.
-		_build_routes()
-		_spawn_lights()
-		_spawn_cars()
-		_built = true
+		# Физика может ещё не зарегистрировать коллизии острова (гонка _ready).
+		# Ждём, пока контрольные колонки дороги станут видимыми для лучей.
+		_build_tries += 1
+		if _ground_ready():
+			_build_routes()
+			_spawn_lights()
+			_spawn_cars()
+			_built = true
+		elif _build_tries >= 600:
+			push_error("Traffic: ground never became queryable; traffic disabled")
+			_running = false
 	if _running:
 		step(delta)
+
+
+func _ground_ready() -> bool:
+	if _space == null:
+		return false
+	for p in PROBE_XZ:
+		var ray := PhysicsRayQueryParameters3D.create(Vector3(p.x, 45.0, p.y), Vector3(p.x, -25.0, p.y))
+		if _space.intersect_ray(ray).is_empty():
+			return false
+	return true
 
 
 func _build_routes() -> void:
@@ -103,9 +120,17 @@ func _spawn_route_meta(rid: String, meta: Dictionary) -> void:
 		var b: Vector3 = pts[(i + 1) % pts.size()]
 		smoothed.append(a.lerp(b, 0.25))
 		smoothed.append(a.lerp(b, 0.75))
-	# terrain height per point
+	# Road height: level = median of the top hits; every point snaps to the
+	# surface closest to that level. Overhangs (roof slabs above the street)
+	# and gaps (holes in the block) can no longer throw cars onto roofs or
+	# into the ground — they stay glued to the road level.
+	var first_ys := []
 	for i in smoothed.size():
-		smoothed[i].y = _ground_y(smoothed[i])
+		var hs: Array = _column_hits(smoothed[i], 45.0, -25.0, 6)
+		first_ys.append(float(hs[0]) if hs.size() > 0 else -999.0)
+	var level := _road_level(first_ys)
+	for i in smoothed.size():
+		smoothed[i].y = _nearest_surface(smoothed[i], level)
 	# cumulative distances (closed loop)
 	var cum := [0.0]
 	var total := 0.0
@@ -125,14 +150,49 @@ func _spawn_route_meta(rid: String, meta: Dictionary) -> void:
 	}
 
 
+func _column_hits(pos: Vector3, top: float, bottom: float, max_hits: int) -> Array:
+	var out := []
+	var from := Vector3(pos.x, top, pos.z)
+	for i in max_hits:
+		var ray := PhysicsRayQueryParameters3D.create(from, Vector3(pos.x, bottom, pos.z))
+		var hit: Dictionary = _space.intersect_ray(ray)
+		if hit.is_empty():
+			break
+		out.append(hit.position.y)
+		from = Vector3(pos.x, hit.position.y - 0.06, pos.z)
+		if from.y < bottom:
+			break
+	return out
+
+
+func _road_level(ys: Array) -> float:
+	var good := []
+	for y in ys:
+		if float(y) > -900.0:
+			good.append(float(y))
+	good.sort()
+	return float(good[good.size() / 2]) if good.size() > 0 else 26.0
+
+
+func _nearest_surface(pos: Vector3, level: float) -> float:
+	var best := level
+	var best_diff := 1.2
+	var hs: Array = _column_hits(pos, 45.0, -25.0, 6)
+	for y in hs:
+		var d := absf(float(y) - level)
+		if d < best_diff:
+			best = float(y)
+			best_diff = d
+	return best
+
+
 func _ground_y(pos: Vector3) -> float:
 	if _space == null:
-		return 24.0
-	var ray := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 30.0, pos + Vector3.DOWN * 55.0)
-	var hit = _space.intersect_ray(ray)
-	if hit.is_empty():
-		return 24.0
-	return float(hit["position"].y)
+		return 26.0
+	var hs: Array = _column_hits(pos, 45.0, -25.0, 3)
+	if hs.is_empty():
+		return 26.0
+	return float(hs[0])
 
 
 func _spawn_cars() -> void:

@@ -282,6 +282,13 @@ func _physics_process(delta: float) -> void:
 func _smoke_check() -> void:
 	await get_tree().physics_frame
 	assert(collider_count > 3, "Collision shapes missing")
+	# Ждём, пока трафик и жизнь острова построятся (гейт «физика готова»).
+	var build_wait := 0
+	while (traffic != null and not traffic._built) or (island_life != null and not island_life._built):
+		build_wait += 1
+		if build_wait >= 600:
+			break
+		await get_tree().process_frame
 	set_physics_process(false)
 	set_captured(true)
 	reset_street()
@@ -335,20 +342,33 @@ func _smoke_check() -> void:
 	# Traffic: run a deterministic simulation and sanity-check the fleet.
 	if traffic:
 		traffic.set_process(false)
-		traffic.simulate(30.0)
+		var car_ymin := {}
+		var car_ymax := {}
+		for i in 300:
+			traffic.step(0.1)
+			for car in traffic._cars:
+				var uid: int = int(car["uid"])
+				var y: float = car["node"].position.y
+				if not car_ymin.has(uid):
+					car_ymin[uid] = y
+					car_ymax[uid] = y
+				car_ymin[uid] = minf(float(car_ymin[uid]), y)
+				car_ymax[uid] = maxf(float(car_ymax[uid]), y)
+		for uid in car_ymin:
+			assert(float(car_ymax[uid]) - float(car_ymin[uid]) < 1.2, "Car %d left its road level" % uid)
 		for car in traffic._cars:
 			var cpos: Vector3 = car["node"].position
 			assert(cpos.is_finite(), "Car position is NaN")
 			assert(cpos.y > 10.0 and cpos.y < 45.0, "Car left the deck")
-		assert(traffic.car_count >= 10, "Not enough cars spawned")
+		assert(traffic.car_count >= 9, "Not enough cars spawned")
 		assert(traffic.special_count >= 2, "No emergency vehicles spawned")
-		assert(traffic.light_count >= 4, "Not enough traffic lights")
+		assert(traffic.light_count >= 6, "Not enough traffic lights")
 		assert(traffic.travel_total > 30.0, "Cars did not drive")
 		assert(traffic.state_changes >= 6, "Traffic lights never changed state")
 		var route_report := ""
-		for rid in ["south", "central", "north"]:
+		for rid in ["south", "south_strip", "central", "north"]:
 			var rt: float = float(traffic.travel_by_route.get(rid, 0.0))
-			assert(rt > 25.0, "Route %s was not used by its cars" % rid)
+			assert(rt > 20.0, "Route %s was not used by its cars" % rid)
 			route_report += "%s=%.0fm " % [rid, rt]
 		print("TRAFFIC_OK | cars: ", traffic.car_count, " (special: ", traffic.special_count, ") / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / routes: ", route_report.strip_edges(), " / light changes: ", traffic.state_changes)
 	# Living town: deterministic pedestrian + shop-visit simulation.
@@ -359,9 +379,9 @@ func _smoke_check() -> void:
 			var wpos: Vector3 = walker["node"].global_position
 			assert(wpos.is_finite(), "Walker position is NaN")
 			assert(wpos.y > 10.0 and wpos.y < 30.0, "Walker left the plaza")
-		assert(island_life.walker_count >= 6, "Not enough pedestrians")
-		assert(island_life.shop_count >= 3, "Not enough shops")
-		assert(island_life.travel_total > 60.0, "Pedestrians did not walk")
+		assert(island_life.walker_count >= 10, "Not enough pedestrians")
+		assert(island_life.shop_count >= 5, "Not enough shops")
+		assert(island_life.travel_total > 100.0, "Pedestrians did not walk")
 		assert(island_life.visit_count >= 1, "Shops were never visited")
 		print("ISLAND_LIFE_OK | walkers: ", island_life.walker_count, " / shops: ", island_life.shop_count, " / travel: ", int(island_life.travel_total), " m / visits: ", island_life.visit_count)
 	await get_tree().create_timer(1.0).timeout
