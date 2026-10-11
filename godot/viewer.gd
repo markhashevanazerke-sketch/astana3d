@@ -32,6 +32,9 @@ func _ready() -> void:
 		_add_collisions(city)
 	var mini := get_node_or_null("MiniCity")
 	if mini:
+		# The island asset ships pre-cleaned: the baked-in parked vehicles are
+		# already cut out of polygon_mini_free_clean.glb (see glb_surgery.js),
+		# so the simulation keeps only the 5 moving cars.
 		_add_collisions(mini)
 		traffic = Node3D.new()
 		traffic.name = "Traffic"
@@ -339,39 +342,79 @@ func _smoke_check() -> void:
 	set_captured(true)
 	reset_street()
 	assert(observer.position == npc_start, "Reset failed")
-	# Traffic: run a deterministic simulation and sanity-check the fleet.
+	# Traffic + town life: interleaved deterministic simulation with hard
+	# separation asserts (cars never overlap, never cross pedestrians,
+	# pedestrians never overlap, shops are entered, the child plays).
+	var car_y_prev := {}
+	var min_car_dist := 1e9
+	var min_car_ped := 1e9
+	var min_ped_dist := 1e9
 	if traffic:
 		traffic.set_process(false)
-		var car_y_prev := {}
+		# deterministic window: zero the counters so the asserts below measure
+		# exactly the 300 manual steps (30 s) and not stray physics frames
+		traffic.travel_total = 0.0
+		traffic.stop_events = 0
+		traffic.state_changes = 0
+		traffic.travel_by_route = {}
+		if island_life:
+			island_life.set_physics_process(false)
+			island_life.travel_total = 0.0
+			island_life.visit_count = 0
+			island_life.play_events = 0
+			for walker in island_life._walkers:
+				walker["travelled"] = 0.0
 		for i in 300:
 			traffic.step(0.1)
+			if island_life:
+				island_life.tick(0.1)
 			for car in traffic._cars:
 				var uid: int = int(car["uid"])
 				var y: float = car["node"].position.y
 				if car_y_prev.has(uid):
 					assert(absf(y - float(car_y_prev[uid])) < 0.6, "Car %d fell or jumped (y %f -> %f)" % [uid, float(car_y_prev[uid]), y])
 				car_y_prev[uid] = y
+			for a in traffic._cars:
+				for b in traffic._cars:
+					if int(a["uid"]) >= int(b["uid"]):
+						continue
+					var pa: Vector3 = a["node"].position
+					var pb: Vector3 = b["node"].position
+					min_car_dist = minf(min_car_dist, Vector3(pa.x, 0, pa.z).distance_to(Vector3(pb.x, 0, pb.z)))
+			if island_life:
+				for car in traffic._cars:
+					var ca: Vector3 = car["node"].position
+					for w in island_life._walkers:
+						var pw: Vector3 = w["node"].global_position
+						min_car_ped = minf(min_car_ped, Vector3(ca.x, 0, ca.z).distance_to(Vector3(pw.x, 0, pw.z)))
+				for w1 in island_life._walkers:
+					for w2 in island_life._walkers:
+						if w1 == w2:
+							continue
+						var p1: Vector3 = w1["node"].global_position
+						var p2: Vector3 = w2["node"].global_position
+						min_ped_dist = minf(min_ped_dist, Vector3(p1.x, 0, p1.z).distance_to(Vector3(p2.x, 0, p2.z)))
 		for car in traffic._cars:
 			var cpos: Vector3 = car["node"].position
 			assert(cpos.is_finite(), "Car position is NaN")
 			assert(cpos.y > 10.0 and cpos.y < 45.0, "Car left the deck")
-		assert(traffic.car_count >= 5, "Not enough cars spawned")
+		assert(traffic.car_count == 5, "Fleet must be exactly 5 active cars")
 		assert(traffic.special_count >= 2, "No emergency vehicles spawned")
 		assert(traffic.light_count >= 4, "Not enough traffic lights")
 		assert(traffic.travel_total > 30.0, "Cars did not drive")
 		assert(traffic.stop_events >= 1, "Cars never stopped at a light")
 		assert(traffic.state_changes >= 6, "Traffic lights never changed state")
+		assert(min_car_dist > 0.9, "Cars overlapped (min gap %.2f m)" % min_car_dist)
+		assert(min_car_ped > 1.2, "A car crossed a pedestrian (min gap %.2f m)" % min_car_ped)
 		var route_report := ""
-		var route_thresholds := {"main": 80.0, "parking": 40.0}
+		var route_thresholds := {"main": 120.0, "lot": 60.0}
 		for rid in route_thresholds:
 			var rt: float = float(traffic.travel_by_route.get(rid, 0.0))
 			assert(rt > float(route_thresholds[rid]), "Route %s was not used by its cars" % rid)
 			route_report += "%s=%.0fm " % [rid, rt]
-		print("TRAFFIC_OK | cars: ", traffic.car_count, " (special: ", traffic.special_count, ") / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / routes: ", route_report.strip_edges(), " / light changes: ", traffic.state_changes)
-	# Living town: deterministic pedestrian + shop-visit simulation.
+		print("TRAFFIC_OK | cars: ", traffic.car_count, " (special: ", traffic.special_count, ") / lights: ", traffic.light_count, " / travel: ", int(traffic.travel_total), " m / stops: ", traffic.stop_events, " / min car gap: %.2fm " % min_car_dist, " / min car-ped gap: %.2fm " % min_car_ped, " / routes: ", route_report.strip_edges(), " / light changes: ", traffic.state_changes)
 	if island_life:
 		island_life.set_physics_process(false)
-		island_life.simulate(30.0)
 		for walker in island_life._walkers:
 			var wpos: Vector3 = walker["node"].global_position
 			assert(wpos.is_finite(), "Walker position is NaN")
@@ -379,8 +422,10 @@ func _smoke_check() -> void:
 		assert(island_life.walker_count >= 10, "Not enough pedestrians")
 		assert(island_life.shop_count >= 5, "Not enough shops")
 		assert(island_life.travel_total > 100.0, "Pedestrians did not walk")
-		assert(island_life.visit_count >= 1, "Shops were never visited")
-		print("ISLAND_LIFE_OK | walkers: ", island_life.walker_count, " / shops: ", island_life.shop_count, " / travel: ", int(island_life.travel_total), " m / visits: ", island_life.visit_count)
+		assert(island_life.visit_count >= 1, "Shops were never entered")
+		assert(island_life.play_events >= 1, "Child never played at the playground")
+		assert(min_ped_dist > 0.3, "Pedestrians overlapped (min gap %.2f m)" % min_ped_dist)
+		print("ISLAND_LIFE_OK | walkers: ", island_life.walker_count, " / shops: ", island_life.shop_count, " / travel: ", int(island_life.travel_total), " m / shop entries: ", island_life.visit_count, " / play events: ", island_life.play_events, " / min ped gap: %.2fm" % min_ped_dist)
 	await get_tree().create_timer(1.0).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(ProjectSettings.globalize_path("res://").path_join("../previews/enclosed_street.png"))

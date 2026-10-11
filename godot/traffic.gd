@@ -690,6 +690,26 @@ func _update_cars(dt: float) -> void:
 						# queue can start moving without a deadlock
 					allowed = minf(allowed, float(other["speed"]) + 0.4)
 				target = minf(target, allowed)
+		# Global avoidance (safety net across routes): any car physically ahead
+		# in the driving direction gets a kinematic brake limit. Catches rare
+		# cross-route approaches where the same-route spacing model cannot see.
+		var my_pos: Vector3 = _sample(route, car["s"])["pos"]
+		var my_dir: Vector3 = _heading(route, car["s"], float(car["speed"]))
+		for other in _cars:
+			if other["uid"] == car["uid"] or other["route"] == car["route"]:
+				continue
+			var o_pos: Vector3 = other["node"].position
+			var o_delta := Vector3(o_pos.x - my_pos.x, 0.0, o_pos.z - my_pos.z)
+			var o_len: float = o_delta.length()
+			if o_len < 0.001 or o_len > 4.5:
+				continue
+			var o_forward: float = o_delta.normalized().dot(my_dir) * o_len
+			if o_forward < 0.2:
+				continue
+			var o_allowed: float = sqrt(2.0 * decel * maxf(o_forward - 2.0, 0.0))
+			if o_forward < 2.8:
+				o_allowed = minf(o_allowed, float(other["speed"]) + 0.3)
+			target = minf(target, o_allowed)
 		if car["speed"] < target:
 			car["speed"] = minf(target, car["speed"] + accel * dt)
 		else:

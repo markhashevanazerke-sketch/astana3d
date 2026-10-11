@@ -1,5 +1,5 @@
 {
-  "comment": "Toy-town traffic v3. Cars drive only on real asphalt (verified by the top-down color grid, 11.10.2026). Two closed loops: the main street (two opposite lanes, junction, dead-end branch with U-turn) and the parking lot. 5 cars total, spaced evenly so no car follows another. Lights: 3 functional + 2 decorative.",
+  "comment": "Toy-town traffic v5. Routes rebuilt from the real heightmap scan (11.10.2026): only flat, probe-verified asphalt corridors. 'main' = the south N-S street (two one-way lanes x5.5/x8.5, z39..64.5, hairpin at the north end) — the north part of the island is a dense old town with buildings, no straight corridors there. 'lot' = the parking-slab ring (the parked GLB cars are removed from the mesh by car_cleaner.gd). 5 cars total, spacing > follow_range so no car ever follows another.",
   "car": {
     "width": 1.0,
     "length": 2.5,
@@ -23,36 +23,31 @@
   "routes": {
     "main": {
       "points": [
-        [5.5, -1.0],
-        [5.5, 65.5],
-        [17.0, 66.5],
-        [17.0, 77.0],
-        [15.0, 77.0],
-        [15.0, 66.5],
-        [8.5, 66.0],
-        [8.5, -1.0]
+        [5.5, 39.0],
+        [5.5, 64.0],
+        [8.5, 64.5],
+        [8.5, 39.0]
       ],
       "cars": 3,
       "cruise": [3.2, 3.6, 4.0],
       "special": { "index": 1, "kind": "police" }
     },
-    "parking": {
+    "lot": {
       "points": [
-        [1.5, -7.0],
-        [12.5, -7.0],
-        [12.5, -11.5],
-        [1.5, -11.5]
+        [2.0, 0.0],
+        [12.0, 0.0],
+        [12.0, -9.0],
+        [2.0, -9.0]
       ],
       "cars": 2,
-      "cruise": [2.6, 3.0],
+      "cruise": [2.4, 2.8],
       "special": { "index": 0, "kind": "fire" }
     }
   },
   "lights": [
-    { "id": "l1", "route": "main", "junction": [11.25, 66.0], "pole": [3.2, 65.2], "phase": 0.0 },
-    { "id": "l2", "route": "main", "junction": [17.0, 70.0], "pole": [13.2, 70.0], "phase": 3.5 },
-    { "id": "l3", "route": "parking", "junction": [7.0, -7.0], "pole": [7.0, -5.6], "phase": 7.0 },
-    { "id": "l4", "route": "", "pole": [31.0, 62.5], "phase": 1.8, "face": [0.0, -1.0] },
-    { "id": "l5", "route": "", "pole": [-13.5, 5.2], "phase": 5.2, "face": [0.7, -0.7] }
+    { "id": "l1", "route": "main", "junction": [7.0, 64.25], "pole": [0.0, 62.5], "phase": 0.0 },
+    { "id": "l2", "route": "lot", "junction": [7.0, -0.5], "pole": [7.0, -11.0], "phase": 3.5 },
+    { "id": "l3", "route": "", "pole": [21.0, 66.3], "phase": 1.8, "face": [0.0, -1.0] },
+    { "id": "l4", "route": "", "pole": [3.0, 59.5], "phase": 5.2, "face": [-1.0, 0.0] }
   ]
 }

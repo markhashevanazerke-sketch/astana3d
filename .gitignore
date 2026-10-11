@@ -36,6 +36,7 @@
 !/scripts/build_pedestrian_grid.py
 !/scripts/build_pedestrian_routes.py
 !/scripts/verify_assets.py
+!/scripts/glb_surgery.js
 !/scripts/requirements.txt
 /previews/*
 !/previews/npcs_city_street.png

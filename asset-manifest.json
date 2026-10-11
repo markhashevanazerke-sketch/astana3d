@@ -91,6 +91,12 @@
       "sha256": "f44f7babb62e36bd4cc1d8d53fb5a858ca2cad27424eb41c35e541b6a74c0be2"
     },
     {
+      "path": "godot/assets/polygon_mini_free_clean.glb",
+      "bytes": 7583156,
+      "sha256": "83952e91d126b0d9014eb18ae91fb7e91183ee55ca141e776d12c133aabce230",
+      "note": "derived from polygon_mini_free.glb by glb_surgery.js: baked-in parked vehicles cut out of the index arrays (pavement under them preserved); the simulation keeps only the 5 moving cars"
+    },
+    {
       "path": "source/characters/cartoon_asian__boy.glb",
       "bytes": 39691332,
       "sha256": "9df0f4fc1923384464a32e38ec68008ffeb563119c040e05229b753a18dcd422"
