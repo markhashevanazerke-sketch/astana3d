@@ -150,6 +150,7 @@ func _spawn_route_meta(rid: String, meta: Dictionary) -> void:
 		"n_cars": int(meta.get("cars", 2)),
 		"cruise": meta.get("cruise", [3.5, 4.0]),
 		"special": meta.get("special", {}),
+		"corner_zones": meta.get("corner_zones", []),
 	}
 
 
@@ -238,6 +239,8 @@ func _spawn_cars() -> void:
 				"cruise": spec["cruise"],
 				"uid": uid,
 				"wheels": spec["wheels"],
+				"length": spec["length"],
+				"width": spec["width"],
 			}
 			add_child(spec["node"])
 			_cars.append(car)
@@ -333,7 +336,7 @@ func _make_vehicle(kind: String, cruise: float) -> Dictionary:
 		tail.material_override = tail_mat
 		tail.position = Vector3(hx * 0.38, 0.52, ll + 0.01)
 		root.add_child(tail)
-	var result := {"node": root, "cruise": cruise, "wheels": wheels}
+	var result := {"node": root, "cruise": cruise, "wheels": wheels, "length": length, "width": float(_car_spec.get("width", 1.0))}
 	if kind == "police":
 		_decorate_police(root, length, result)
 	elif kind == "fire":
@@ -665,13 +668,25 @@ func _update_cars(dt: float) -> void:
 	for car in _cars:
 		var route: Dictionary = _routes[car["route"]]
 		var target: float = car["cruise"]
+		# corner zones: the ring folds back at the hairpins and the lot ring
+		# has 90-degree turns — a speed limit there keeps braking distances
+		# short and the U-turn passing clearance reliable
+		var p_now: Vector3 = _sample(route, car["s"])["pos"]
+		for cz in route["corner_zones"]:
+			var dz: float = Vector3(p_now.x, 0.0, p_now.z).distance_to(Vector3(float(cz[0]), 0.0, float(cz[1])))
+			if dz < float(cz[2]):
+				target = minf(target, float(cz[3]))
+				break
 		# traffic lights on this route
 		for light in _lights_by_route.get(car["route"], []):
 			var d: float = fposmod(float(light["stop_s"]) - float(car["s"]), float(route["length"]))
 			if d < 1.2:
 				# committed to (or past) the stop line: no mid-intersection brake
 				continue
-			if d < 4.5:
+			# braking window for the light must cover the full queue stop
+			# distance (bumper gap 3.0 m + deceleration), otherwise the car
+			# behind discovers the stopped leader too late and compresses
+			if d < 8.0:
 				if light["state"] == 2:
 					target = minf(target, 0.0)
 				elif light["state"] == 1:
@@ -684,11 +699,17 @@ func _update_cars(dt: float) -> void:
 				continue
 			var d: float = fposmod(float(other["s"]) - float(car["s"]), float(route["length"]))
 			if d > 0.01 and d < range_m:
-				var allowed: float = sqrt(2.0 * decel * maxf(d - 1.6, 0.0))
+				# bumper gap the two cars actually need + a full-braking margin,
+				# otherwise the follower cuts into the stop envelope and rams
+				# the leader's rear bumper (the chase dynamics undershoot by
+				# up to v^2/2a without the margin)
+				var gap_m: float = (float(car["length"]) + float(other["length"])) * 0.5 + 0.3
+				var allowed: float = sqrt(2.0 * decel * maxf(d - gap_m - 2.0, 0.0))
 				if d < gap:
-					# platoon: match the leader, small allowance so a standing
-						# queue can start moving without a deadlock
-					allowed = minf(allowed, float(other["speed"]) + 0.4)
+					# platoon: match the leader (tiny epsilon so a standing
+					# queue can release without a deadlock); no +0.4 allowance,
+					# that allowed slow compression of the queue
+					allowed = minf(allowed, float(other["speed"]) + 0.1)
 				target = minf(target, allowed)
 		# Global avoidance (safety net across routes): any car physically ahead
 		# in the driving direction gets a kinematic brake limit. Catches rare
@@ -696,19 +717,26 @@ func _update_cars(dt: float) -> void:
 		var my_pos: Vector3 = _sample(route, car["s"])["pos"]
 		var my_dir: Vector3 = _heading(route, car["s"], float(car["speed"]))
 		for other in _cars:
-			if other["uid"] == car["uid"] or other["route"] == car["route"]:
+			# safety net for ALL pairs (same route included): at the hairpin the
+			# ring folds back, so the arc distance can be long while the XZ
+			# distance of the two legs is short — the arc-only model cannot see it
+			if other["uid"] == car["uid"]:
 				continue
 			var o_pos: Vector3 = other["node"].position
 			var o_delta := Vector3(o_pos.x - my_pos.x, 0.0, o_pos.z - my_pos.z)
 			var o_len: float = o_delta.length()
-			if o_len < 0.001 or o_len > 4.5:
+			if o_len < 0.001 or o_len > 7.0:
 				continue
 			var o_forward: float = o_delta.normalized().dot(my_dir) * o_len
-			if o_forward < 0.2:
+			# lateral offset: a car in the opposing lane (offset >= lane width)
+			# is never a risk; only a car nearly on our own lane line is
+			var o_lat: float = absf(o_delta.x * my_dir.z - o_delta.z * my_dir.x)
+			if o_forward < 0.2 or o_lat > 1.6:
 				continue
-			var o_allowed: float = sqrt(2.0 * decel * maxf(o_forward - 2.0, 0.0))
-			if o_forward < 2.8:
-				o_allowed = minf(o_allowed, float(other["speed"]) + 0.3)
+			var gap_m2: float = (float(car["length"]) + float(other["length"])) * 0.5 + 0.3
+			var o_allowed: float = sqrt(2.0 * decel * maxf(o_forward - gap_m2 - 2.0, 0.0))
+			if o_forward < gap_m2 + 0.2:
+				o_allowed = minf(o_allowed, float(other["speed"]) + 0.1)
 			target = minf(target, o_allowed)
 		if car["speed"] < target:
 			car["speed"] = minf(target, car["speed"] + accel * dt)

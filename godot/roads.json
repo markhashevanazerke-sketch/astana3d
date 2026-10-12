@@ -30,7 +30,8 @@
       ],
       "cars": 3,
       "cruise": [3.2, 3.6, 4.0],
-      "special": { "index": 1, "kind": "police" }
+      "special": { "index": 1, "kind": "police" },
+      "corner_zones": [[7.0, 64.25, 4.5, 2.2], [7.0, 39.0, 4.5, 2.2]]
     },
     "lot": {
       "points": [
@@ -41,7 +42,8 @@
       ],
       "cars": 2,
       "cruise": [2.4, 2.8],
-      "special": { "index": 0, "kind": "fire" }
+      "special": { "index": 0, "kind": "fire" },
+      "corner_zones": [[12.0, 0.0, 3.0, 2.4], [12.0, -9.0, 3.0, 2.4], [2.0, -9.0, 3.0, 2.4], [2.0, 0.0, 3.0, 2.4]]
     }
   },
   "lights": [
