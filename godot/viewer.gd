@@ -370,9 +370,10 @@ func _smoke_check() -> void:
 	Input.action_release("forward")
 	assert(observer.position.is_equal_approx(start), "Paused camera must stay still")
 	# Sweep at the diorama deck level: rays toward the island must hit its solid
-	# base, and the camera must stop against the first hit point.
+	# base, and the camera must stop against the first hit point. The origin
+	# sits beyond the outer edge of the world deck (z 250) at deck level.
 	var space := get_world_3d().direct_space_state
-	var sweep_from := Vector3(0.0, 25.0, 120.0)
+	var sweep_from := Vector3(0.0, 25.0, 260.0)
 	var tested := 0
 	for i in range(16):
 		var angle := TAU * float(i) / 16.0
