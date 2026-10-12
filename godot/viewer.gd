@@ -21,6 +21,7 @@ var npc_start := STREET_START
 var npc_yaw := 0.372
 var traffic: Node3D
 var island_life: Node3D
+var island_deck: Node3D
 var cinematic := false
 var _cin_angle := 0.6
 
@@ -44,6 +45,11 @@ func _ready() -> void:
 		island_life.name = "IslandLife"
 		island_life.set_script(preload("res://island_life.gd"))
 		add_child(island_life)
+		# the world ground: a big walkable deck ring around the diorama
+		island_deck = Node3D.new()
+		island_deck.name = "IslandDeck"
+		island_deck.set_script(preload("res://island_deck.gd"))
+		add_child(island_deck)
 	observer = CharacterBody3D.new()
 	observer.name = "Observer"
 	observer.collision_mask = 3
@@ -282,8 +288,11 @@ func _physics_process(delta: float) -> void:
 			observer.velocity += Vector3(0.0, -9.8, 0.0) * delta
 		observer.move_and_slide()
 		velocity = Vector3(observer.velocity.x, 0.0, observer.velocity.z)
-		# fell off the diorama? back on the deck
-		if observer.position.y < 5.0:
+		# fell off the world? back on the deck
+		var void_level: float = 5.0
+		if island_deck and is_instance_valid(island_deck):
+			void_level = float(island_deck.deck_top) - 8.0
+		if observer.position.y < void_level:
 			observer.position = npc_start
 			observer.velocity = Vector3.ZERO
 			velocity = Vector3.ZERO
